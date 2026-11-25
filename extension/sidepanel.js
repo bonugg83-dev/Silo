@@ -33,6 +33,9 @@ const DEFAULT_SETTINGS = {
   stopOnWarnings: false,
   timeWarnMin: 20,
   showCost: true,
+  pacing: true,
+  paceMinSec: 60,
+  paceMaxSec: 90,
 };
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -41,6 +44,7 @@ let autoRunning = false;
 let abort = null;
 let sessionCost = 0;
 let editing = false;
+let paceWarnText = '';
 
 // ---------- 설정 ----------
 async function loadSettings() {
@@ -121,6 +125,7 @@ const ADV_FIELDS = {
   effort: 'value', verify: 'checked', useToc: 'checked', imageMax: 'value', dashSpacing: 'value', unitSymbols: 'checked',
   autoVisuals: 'checked', stopOnVisuals: 'checked', stopOnSpecial: 'checked', stopOnPageGuess: 'checked',
   stopOnWarnings: 'checked', timeWarnMin: 'value', showCost: 'checked',
+  pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
 };
 function fillForms() {
   const sel = $('model');
@@ -133,9 +138,11 @@ function fillForms() {
 async function saveAdvanced() {
   for (const [id, prop] of Object.entries(ADV_FIELDS)) {
     let v = $(id)[prop];
-    if (id === 'imageMax' || id === 'timeWarnMin') v = Number(v) || 0;
+    if (['imageMax', 'timeWarnMin', 'paceMinSec', 'paceMaxSec'].includes(id)) v = Math.max(0, Number(v) || 0);
     settings[id] = v;
   }
+  if (settings.paceMaxSec < settings.paceMinSec) settings.paceMaxSec = settings.paceMinSec;
+  fillForms();
   await persist();
   msg('advancedMsg', '저장했어요.');
 }
@@ -214,8 +221,12 @@ async function refreshStatus() {
     $('pageStatus').textContent = `작업 쪽 ${info.currPage}${range} · 쪽 번호 칸 ${info.nonePage ? '없음' : (info.pageField || '비어 있음')} · 남은 시간 ${info.timeText || '?'}`;
     $('pageStatus').classList.remove('muted');
     const low = info.remainingSec != null && settings.timeWarnMin > 0 && info.remainingSec < settings.timeWarnMin * 60;
-    $('timeWarn').classList.toggle('hidden', !low);
-    if (low) $('timeWarn').textContent = `남은 시간이 ${fmtTime(info.remainingSec)}이에요. 시간 안에 모든 쪽을 저장하고 직접 “제출하기”를 눌러야 봉사가 인정돼요.`;
+    const warn = [
+      low ? `남은 시간이 ${fmtTime(info.remainingSec)}이에요. 시간 안에 모든 쪽을 저장하고 직접 “제출하기”를 눌러야 봉사가 인정돼요.` : '',
+      autoRunning ? paceWarnText : '',
+    ].filter(Boolean).join(' ');
+    $('timeWarn').classList.toggle('hidden', !warn);
+    $('timeWarn').textContent = warn;
     const book = await getBook(info.bookIdx);
     showTocState(book);
     return { tab, info };
@@ -762,14 +773,47 @@ function needsStop() {
   return reasons.join(', ');
 }
 
+/** 이번 쪽에 머물 시간(초): 최소~최대 사이 무작위 */
+function pickPaceSec() {
+  if (!settings.pacing) return 0;
+  const lo = Number(settings.paceMinSec) || 0;
+  const hi = Math.max(lo, Number(settings.paceMaxSec) || 0);
+  return lo + Math.random() * (hi - lo);
+}
+/** 쪽을 연 때부터 targetSec가 지날 때까지 기다린다. 자동 모드를 멈추면 false */
+async function waitPace(openedAt, targetSec, page) {
+  while (autoRunning) {
+    const left = Math.ceil(targetSec - (Date.now() - openedAt) / 1000);
+    if (left <= 0) return true;
+    setProgress(`${page}쪽 확인할 것 없음. 다음 쪽까지 ${left}초 기다리는 중… (쪽당 ${Math.round(targetSec)}초)`);
+    await new Promise((r) => setTimeout(r, Math.min(1000, left * 1000)));
+  }
+  return false;
+}
+function paceTimeWarning(info) {
+  if (!settings.pacing || info.remainingSec == null || isNaN(info.maxPage)) return '';
+  const pages = info.maxPage - info.currPage + 1;
+  const need = pages * ((Number(settings.paceMinSec) + Number(settings.paceMaxSec)) / 2 + 10);
+  if (need <= info.remainingSec) return '';
+  return `남은 ${pages}쪽을 쪽당 ${settings.paceMinSec}~${settings.paceMaxSec}초로 하면 약 ${fmtTime(need)} 걸리는데, 남은 시간은 ${fmtTime(info.remainingSec)}이에요. 시간 안에 못 끝낼 수 있어요.`;
+}
+
 async function autoLoop() {
   autoRunning = true;
   $('btnAuto').textContent = '자동 모드 멈추기';
   $('btnAuto').classList.add('danger');
   try {
+    let first = true;
     while (autoRunning) {
+      const openedAt = Date.now();
+      const paceSec = pickPaceSec();
       const st = await refreshStatus();
       if (!st) throw new Error('편집 화면을 찾지 못했어요.');
+      if (first) {
+        first = false;
+        paceWarnText = paceTimeWarning(st.info);
+        if (paceWarnText) await refreshStatus();
+      }
       if (st.info.remainingSec != null && settings.timeWarnMin > 0 && st.info.remainingSec < settings.timeWarnMin * 60) {
         throw new Error(`남은 시간이 ${fmtTime(st.info.remainingSec)}이라 자동 모드를 멈췄어요. 남은 쪽을 확인하고 직접 제출해 주세요.`);
       }
@@ -780,6 +824,7 @@ async function autoLoop() {
         setProgress(`${current.info.currPage}쪽에서 멈췄어요: ${stop}. 확인 후 “넣고 저장 후 다음 쪽”을 누르고 자동 모드를 다시 시작하세요.`);
         break;
       }
+      if (!(await waitPace(openedAt, paceSec, current.info.currPage))) break;
       setProgress(`${current.info.currPage}쪽 저장 후 다음 쪽으로…`);
       const r = await save('next');
       if (!r.moved) {
@@ -790,6 +835,7 @@ async function autoLoop() {
     }
   } finally {
     autoRunning = false;
+    paceWarnText = '';
     $('btnAuto').textContent = '자동 모드 시작';
     $('btnAuto').classList.remove('danger');
     await refreshStatus();

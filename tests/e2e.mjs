@@ -90,7 +90,7 @@ await context.route('https://www.mypickebook.org/**', async (route) => {
   }
   if (url.pathname === '/common/file.php') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: pageImg });
   if (url.pathname === '/making/make_save_proc.php') {
-    saves.push(JSON.parse(route.request().postData()));
+    saves.push({ ...JSON.parse(route.request().postData()), at: Date.now() });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{"result":200}' });
   }
   return route.fulfill({ status: 404, body: '' });
@@ -233,7 +233,18 @@ assert.equal(saves.at(-1).gubun, 'next');
 assert.match(editor.url(), /book_page=152/);
 
 // 7. 자동 모드: 152 저장 → 153에서 시각자료 때문에 멈춤
+// 쪽 넘김 간격: 테스트에서는 2~3초로 줄여서 확인
+await panel.click('.tab[data-tab="advanced"]');
+assert.ok(await panel.isChecked('#pacing'), '기본으로 켜짐');
+assert.equal(await panel.inputValue('#paceMinSec'), '60');
+assert.equal(await panel.inputValue('#paceMaxSec'), '90');
+await panel.fill('#paceMinSec', '2');
+await panel.fill('#paceMaxSec', '3');
+await panel.click('#btnSaveAdvanced');
+await panel.click('.tab[data-tab="work"]');
+const autoStart = Date.now();
 await panel.click('#btnAuto');
+await panel.waitForFunction(() => /다음 쪽까지 \d+초 기다리는 중/.test(document.querySelector('#progress').textContent), null, { timeout: 30000 });
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('멈췄어요') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 60000 });
 console.log('error:', await panel.textContent('#error'));
 console.log('자동 모드:', await panel.textContent('#progress'));
@@ -241,6 +252,8 @@ assert.match(await panel.textContent('#progress'), /시각자료/);
 assert.match(editor.url(), /book_page=153/);
 assert.ok(saves.some((s) => s.page === 152 && s.gubun === 'next' && s.content.includes('@@{152쪽 제목')));
 assert.ok(!saves.some((s) => s.page === 153), '153쪽은 저장하지 않음');
+const save152 = saves.find((s) => s.page === 152 && s.gubun === 'next');
+assert.ok(save152.at - autoStart >= 2000, `쪽당 최소 2초 대기 (${save152.at - autoStart}ms)`);
 const call152 = apiCalls.find((c) => c.page === 152 && c.call === 1);
 assert.match(call152.body.messages[0].content[1].text, /previous_page_ending/);
 const call153 = apiCalls.find((c) => c.page === 153 && c.call === 1);

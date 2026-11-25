@@ -161,6 +161,15 @@
         <label>남은 시간이 이보다 적으면 경고하고 멈춤(분) <input type="number" id="timeWarnMin" min="0" max="180" step="5"></label>
       </div>
       <div class="card">
+        <h2>자동 모드 속도</h2>
+        <label class="inline"><input type="checkbox" id="pacing"> 쪽마다 정해진 시간이 지난 뒤에 다음 쪽으로 넘어가기</label>
+        <div class="row">
+          <label class="inline">최소 <input type="number" id="paceMinSec" min="0" max="600" step="5" style="width:70px">초</label>
+          <label class="inline">최대 <input type="number" id="paceMaxSec" min="0" max="600" step="5" style="width:70px">초</label>
+        </div>
+        <p class="small muted">쪽을 연 때부터 이 범위에서 쪽마다 무작위로 정한 시간이 지나야 저장하고 넘어가요.</p>
+      </div>
+      <div class="card">
         <h2>표시</h2>
         <label class="inline"><input type="checkbox" id="showCost"> 쪽마다 비용 표시</label>
       </div>
