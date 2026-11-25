@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>실로암복지관 전자도서제작 (테스트용 모의 화면)</title></head>
+<body>
+<!-- 실제 make_book.html 구조를 흉내 낸 테스트용 화면. CKEditor와 서버 저장은 가짜. -->
+<div id="makeBook"><div class="makeBox">
+ <div class="makeTop"><div class="contral">
+  <button type="button" class="prev">이전</button>
+  <div class="paging"><input type="text" id="curr_page" value="__PAGE__" curr-page="__PAGE__"> / 165</div>
+  <button type="button" class="next" onclick="saveGo('next')">다음</button>
+ </div><div class="time">02시간 15분 37초</div></div>
+ <div class="makeCon"><div class="lfImg"><span id="zoom"><img src="/making/file.php?p=__PAGE__" id="book_img"></span></div>
+  <div class="rtEdit"><textarea id="content">__OCR__</textarea></div></div>
+ <div class="makeBotm">페이지번호
+  <input type="text" id="page_num" value="__PAGE__">
+  <input class="check" type="checkbox" id="none_page" value="Y"> <label for="none_page">페이지번호 없음</label>
+  <input type="button" value="임시저장" class="btn1" onclick="saveGo('temp')">
+ </div></div>
+ <div class="makeSide"><div class="makeInfor"><h2>임헌영의 미국문학기행</h2><ul><li>지은이 : 임헌영 지음</li><li>출판사 : 역사비평사</li></ul></div>
+  <div class="makeTip"><p class="tipTit">&lt;제작 Tip&gt;</p><p class="tipMore"><button>크게 보기</button></p>미주는 '주석'으로 입력해 주세요.</div></div>
+</div>
+<script>
+  window.__saved = [];
+  window.CKEDITOR = { instances: { content: {
+    _data: document.getElementById('content').value.replace(/\n/g, ''),
+    getData() { return this._data; },
+    setData(d, opt) { this._data = d; setTimeout(() => opt && opt.callback && opt.callback(), 50); },
+    updateElement() { document.getElementById('content').value = this._data; },
+  } } };
+  function saveGo(gubun) {
+    var book_page = __PAGE__, end_page = 165;
+    if (gubun == 'next') { book_page += 1; if (book_page > end_page) { alert('다음 페이지가 없습니다.'); return false; } }
+    CKEDITOR.instances.content.updateElement();
+    var v = document.getElementById('content').value;
+    if (v.indexOf('&gt;') > -1 || v.indexOf('&lt;') > -1) { alert('산괄호(</>), 부등호 기호는 유니코드를 사용해 주세요.'); return false; }
+    if (gubun == 'complete') { throw new Error('COMPLETE CALLED'); }
+    setTimeout(function () {
+      fetch('/making/make_save_proc.php', { method: 'POST', body: JSON.stringify({ gubun: gubun, page: __PAGE__, content: v, page_num: document.getElementById('page_num').value }) })
+        .then(function () {
+          if (gubun == 'next') location = '/making/make_book.html?idx=23584&book_page=' + book_page;
+          else if (gubun == 'temp') alert('저장 되었습니다.');
+        });
+    }, 100);
+  }
+</script>
+</body></html>

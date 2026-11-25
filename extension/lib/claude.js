@@ -1,0 +1,102 @@
+// Claude Messages API 호출 (브라우저에서 직접 호출).
+// 압축 해제 확장 프로그램은 빌드 단계가 없어 SDK 대신 fetch로 REST API를 호출한다.
+import { SYSTEM_PROMPT, RESULT_SCHEMA } from './prompt.js';
+
+export const MODELS = [
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 권장)', inPrice: 4, outPrice: 20 },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 저렴)', inPrice: 2, outPrice: 10 },
+  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 (가장 정확, 비쌈)', inPrice: 8, outPrice: 40 },
+];
+
+export class ClaudeError extends Error {
+  constructor(message, { status, retryable } = {}) {
+    super(message);
+    this.status = status;
+    this.retryable = !!retryable;
+  }
+}
+
+function parseDataUrl(dataUrl) {
+  const m = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
+  if (!m) throw new ClaudeError('이미지 형식을 읽을 수 없어요.');
+  return { media_type: m[1], data: m[2] };
+}
+
+/** 페이지 이미지 + 지시문으로 구조화된 결과를 받는다. */
+export async function callClaude({ apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true }) {
+  if (!apiKey) throw new ClaudeError('설정에서 Claude API 키를 넣어 주세요.');
+  const img = parseDataUrl(imageDataUrl);
+  const body = {
+    model,
+    max_tokens: 20000,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      effort,
+      format: { type: 'json_schema', schema: RESULT_SCHEMA },
+    },
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } },
+        { type: 'text', text: userText },
+      ],
+    }],
+  };
+  const headers = {
+    'content-type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2026-10-21',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+  if (useFallbacks) {
+    // 안전 분류기가 드물게 거절하면 서버가 다른 모델로 이어서 처리한다
+    body.fallbacks = 'default';
+    headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+  }
+
+  let res;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers, body: JSON.stringify(body), signal,
+    });
+    if (res.status === 429 || res.status === 529 || res.status >= 500) {
+      if (res.headers.get('x-should-retry') === 'false') break;
+      const wait = Number(res.headers.get('retry-after')) * 1000 || 2000 * 2 ** attempt;
+      await new Promise((r) => setTimeout(r, Math.min(wait, 30000)));
+      continue;
+    }
+    break;
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message || `HTTP ${res.status}`;
+    if (res.status === 400 && useFallbacks && /fallback/i.test(msg)) {
+      return callClaude({ apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks: false });
+    }
+    if (res.status === 401) throw new ClaudeError('API 키가 올바르지 않아요. 설정을 확인해 주세요.', { status: 401 });
+    if (res.status === 402 || /credit|billing/i.test(msg)) throw new ClaudeError('API 크레딧이 부족해요: ' + msg, { status: res.status });
+    throw new ClaudeError(`Claude 오류(${res.status}): ${msg}`, { status: res.status, retryable: res.status >= 500 || res.status === 429 });
+  }
+  if (json.stop_reason === 'refusal') {
+    throw new ClaudeError('Claude가 이 쪽 처리를 거절했어요. 이 쪽은 직접 교정해 주세요.');
+  }
+  if (json.stop_reason === 'max_tokens') {
+    throw new ClaudeError('응답이 너무 길어 잘렸어요. 다시 시도해 주세요.', { retryable: true });
+  }
+  const text = (json.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  let result;
+  try {
+    result = JSON.parse(text);
+  } catch {
+    throw new ClaudeError('응답 형식을 읽지 못했어요. 다시 시도해 주세요.', { retryable: true });
+  }
+  return { result, usage: json.usage || {}, model: json.model || model };
+}
+
+/** usage로 대략적인 비용(달러)을 계산한다. */
+export function estimateCostUsd(modelId, usage) {
+  const m = MODELS.find((x) => x.id === modelId) || MODELS[0];
+  const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) * 1.25 + (usage.cache_read_input_tokens || 0) * 0.1;
+  return (inTok * m.inPrice + (usage.output_tokens || 0) * m.outPrice) / 1e6;
+}

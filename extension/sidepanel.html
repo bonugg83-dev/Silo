@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>마이픽 교정 도우미</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1>마이픽 교정 도우미</h1>
+    <nav>
+      <button class="tab active" data-tab="work">작업</button>
+      <button class="tab" data-tab="settings">설정</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-work" class="panel active">
+      <div id="pageStatus" class="status muted">편집 화면을 열면 여기 쪽 정보가 보여요.</div>
+      <div id="timeWarn" class="alert hidden"></div>
+
+      <div class="row">
+        <button id="btnAnalyze" class="primary">이 쪽 교정하기</button>
+        <button id="btnAuto">자동 모드 시작</button>
+      </div>
+      <p class="small muted">자동 모드: 확인할 것이 없는 쪽은 넣고 저장한 뒤 다음 쪽으로 넘어가고, 확인할 것이 있는 쪽에서 멈춰요.</p>
+      <div id="progress" class="progress hidden"></div>
+      <div id="error" class="alert error hidden"></div>
+
+      <div id="result" class="hidden">
+        <div class="card">
+          <div class="row between">
+            <label class="inline">쪽 번호 <input type="text" id="pageNum" size="5" inputmode="numeric"></label>
+            <label class="inline"><input type="checkbox" id="nonePage"> 페이지번호 없음</label>
+          </div>
+          <div id="pageNumNote" class="small muted"></div>
+        </div>
+
+        <div id="flagsBox" class="card">
+          <h2>확인할 것</h2>
+          <ul id="flags"></ul>
+        </div>
+
+        <div class="card">
+          <h2>작성 결과 <span class="small muted">(직접 고칠 수 있어요)</span></h2>
+          <textarea id="output" spellcheck="false"></textarea>
+          <div id="liveWarn" class="small"></div>
+          <div class="row wrap">
+            <button id="btnApply">편집기에 넣기</button>
+            <button id="btnApplySave" class="primary">넣고 임시저장</button>
+            <button id="btnApplyNext">넣고 저장 후 다음 쪽</button>
+          </div>
+        </div>
+
+        <details class="card">
+          <summary>OCR과 달라진 곳</summary>
+          <div id="diff" class="diff"></div>
+        </details>
+
+        <details class="card">
+          <summary>고친 내용</summary>
+          <div id="notes" class="small pre"></div>
+          <ul id="changes" class="small"></ul>
+        </details>
+
+        <div id="cost" class="small muted"></div>
+      </div>
+
+      <p class="small muted footnote">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
+    </section>
+
+    <section id="tab-settings" class="panel">
+      <div class="card">
+        <h2>Claude API 키</h2>
+        <div id="keySaved" class="row between hidden">
+          <span>저장된 키: <code id="keyMasked"></code></span>
+          <button id="btnLogout">키 삭제(로그아웃)</button>
+        </div>
+        <div id="keyInput">
+          <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+          <div class="row"><button id="btnSaveKey" class="primary">키 저장</button></div>
+        </div>
+        <p class="small muted">이 컴퓨터의 크롬에만 저장되고, Anthropic API로만 보내져요. 다른 사람과 같이 쓰는 컴퓨터라면 작업 후 “키 삭제”를 눌러 주세요.</p>
+      </div>
+      <div class="card">
+        <h2>AI 설정</h2>
+        <label>모델 <select id="model"></select></label>
+        <label>꼼꼼함(effort)
+          <select id="effort">
+            <option value="medium">보통 (빠르고 저렴)</option>
+            <option value="high">높음 (권장)</option>
+            <option value="xhigh">매우 높음 (느림, 비쌈)</option>
+          </select>
+        </label>
+        <label class="inline"><input type="checkbox" id="verify"> 2차 검증: OCR과 다른 곳을 원본 이미지로 다시 확인 (비용 약 2배)</label>
+        <label class="inline"><input type="checkbox" id="useToc"> [목차보기] 내용을 제목 단계 판단에 참고</label>
+      </div>
+      <div class="card">
+        <h2>규칙</h2>
+        <label>줄표(―) 앞뒤 띄어쓰기
+          <select id="dashSpacing">
+            <option value="attach">붙여 쓰기 (안내서 규칙)</option>
+            <option value="keep">원본대로 두기</option>
+          </select>
+        </label>
+        <label class="inline"><input type="checkbox" id="unitSymbols"> 숫자 뒤 cm, kg 등을 ㎝, ㎏ 단위 기호로 바꾸기</label>
+      </div>
+      <div class="card">
+        <h2>자동 모드</h2>
+        <label>남은 시간이 이보다 적으면 경고하고 멈춤(분) <input type="number" id="timeWarnMin" min="0" max="180" step="5"></label>
+        <label class="inline"><input type="checkbox" id="stopOnWarnings"> 규칙 검사 경고(괄호 짝 등)가 있어도 멈추기</label>
+      </div>
+      <div class="row">
+        <button id="btnSaveSettings" class="primary">저장</button>
+        <button id="btnClearBook">이 책 작업 기록 지우기</button>
+      </div>
+      <div id="settingsMsg" class="small muted"></div>
+    </section>
+  </main>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
