@@ -60,23 +60,38 @@ if (process.env.SILO_SHOT) { await sleep(1300); await panel.screenshot({ path: p
 await panel.waitForFunction(() => !document.body.classList.contains('splashing'), null, { timeout: 8000 });
 await sleep(300);
 console.log('✓ 시작 모션 창 전체');
+// 1. 키 넣기: 계정 기능이 있는 확장이면 회원가입, 없으면 설정에 키 추가
+const KEY = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
+const accounts = fs.existsSync(path.join(process.env.SILO_EXT || path.join(root, '..', 'extension'), 'lib', 'profiles.js'));
+if (accounts) {
+  await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+  await panel.fill('#newName', 'tester');
+  await panel.fill('#newPw1', 'abcd');
+  await panel.fill('#newPw1b', 'abcd');
+  await panel.fill('#newKey', KEY);
+  await panel.click('#btnSignup');
+  await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+  await sleep(500);
+} else {
+  await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
+  await panel.fill('#newKeyName', 'A 키');
+  await panel.fill('#newKeyValue', KEY);
+  await panel.click('#btnSaveKey');
+  await panel.waitForFunction(() => document.querySelectorAll('#keyList .key-row').length === 1);
+  await panel.click('#btnCloseSettings');
+}
 
 // 배치: 왼쪽 사이트, 오른쪽 패널(기본 420)
 b = await silo((s) => s.bounds());
 assert.equal(b.panel.width, 420);
-assert.ok(b.site.width > 600 && b.site.x === 0 && b.panel.x > b.site.width);
+assert.ok(b.site.width > 600 && b.site.x === 0 && b.panel.x > b.site.width && b.panel.y === 48);
 console.log('✓ 배치 A: 사이트', b.site.width, '+ 패널', b.panel.width);
 
-// 1. 키 추가
-await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
-await panel.fill('#newKeyName', 'A 키');
-await panel.fill('#newKeyValue', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
-await panel.click('#btnSaveKey');
-await panel.waitForFunction(() => document.querySelectorAll('#keyList .key-row').length === 1);
-await panel.click('#btnCloseSettings');
-
 // 2. 편집하기 → 팝업 편집 화면 → 패널이 그 창을 찾아 교정 → 넣기
-await home.click('#editPopup');
+// 가입하면 그 사람 로그인 칸으로 사이트 화면이 새로 만들어지므로 다시 찾음
+const home2 = await find(/mypickebook\.org\/$/);
+await home2.waitForLoadState();
+await home2.click('#editPopup');
 const editor = await find(/make_book\.html/);
 await editor.waitForFunction(() => window.CKEDITOR && CKEDITOR.instances.content);
 await panel.click('#btnAuto');
@@ -84,7 +99,7 @@ await panel.click('#btnAnalyze');
 await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.match(await panel.inputValue('#output'), /151쪽 제목/);
-assert.equal((await mock()).apiCalls[0].key, 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
+assert.equal((await mock()).apiCalls[0].key, KEY);
 await panel.click('#btnApply');
 await panel.waitForSelector('#btnApply.full', { timeout: 20000 });
 assert.match(await editor.evaluate(() => CKEDITOR.instances.content.getData()), /151쪽 제목/);
@@ -172,7 +187,8 @@ assert.equal(sess.got.unlock.pid, 'p1');
 assert.deepEqual(sess.seen, ['session:unlock']);
 console.log('✓ storage.session');
 
-// 8. 프로필(activeProfileId)마다 사이트 로그인 따로
+// 8. 프로필(activeProfileId)마다 사이트 로그인 따로 (계정 기능이 있으면 e2e-accounts.mjs 가 실제 가입·로그인으로 시험)
+if (!accounts) {
 const setProfile = (id) => panel.evaluate((v) => (v ? chrome.storage.local.set({ activeProfileId: v }) : chrome.storage.local.remove('activeProfileId')), id);
 const siteCookie = async () => {
   await sleep(400);
@@ -191,19 +207,31 @@ await pg.evaluate(() => { document.cookie = 'login=B; path=/; max-age=3600'; });
 await setProfile('user-a');
 assert.match(await siteCookie(), /login=A/, 'A로 돌아오면 A 로그인 그대로');
 console.log('✓ 프로필마다 사이트 로그인 따로');
+}
 
 // 9. 다시 켜도 키·설정·패널 폭·프로필 유지, session 은 사라짐
 await app.close();
 app = await launch();
 panel = await find(/^silo:\/\/ext\/sidepanel\.html/);
 await panel.waitForLoadState();
-const after = await panel.evaluate(async () => ({ local: await chrome.storage.local.get(['settings', 'activeProfileId']), session: await chrome.storage.session.get(null) }));
-assert.equal(after.local.settings.keys.length, 1);
-assert.equal(after.local.activeProfileId, 'user-a');
-assert.deepEqual(after.session, {});
+const after = await panel.evaluate(async () => ({ local: await chrome.storage.local.get(null), session: await chrome.storage.session.get(null) }));
+if (accounts) {
+  assert.equal(after.local.profiles.length, 1, '계정 유지');
+  await panel.waitForFunction(() => document.body.classList.contains('auth-open'), null, { timeout: 5000 });
+  console.log('  (다시 켜면 로그인 화면부터)');
+  await panel.fill('#loginId', 'tester');
+  await panel.fill('#loginPw', 'abcd');
+  await panel.click('#btnLogin');
+  await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+  await sleep(500);
+} else {
+  assert.equal(after.local.settings.keys.length, 1);
+  assert.equal(after.local.activeProfileId, 'user-a');
+}
+assert.deepEqual(after.session, {}, 'session 은 비워짐');
 b = await silo((s) => s.bounds());
 assert.ok(Math.abs(b.panel.width - 620) <= 12, '같은 날 다시 켜면 모션 없이 바로 배치 A');
-assert.match(await siteCookie(), /login=A/);
+if (!accounts) assert.match(await siteCookie(), /login=A/);
 console.log('✓ 다시 켜도 유지 (session 은 비워짐)');
 
 assert.deepEqual(errors, []);

@@ -21,7 +21,7 @@
 | `main.js` | 창 배치, 사이트 화면·팝업 관리, 확장이 부르는 크롬 기능의 실제 처리 |
 | `preload-shim.js` | 패널·연습 페이지에만 들어가 `chrome.*`를 같은 이름으로 흉내 냄 (사이트 페이지에는 안 들어감) |
 | `preload-ui.js`, `ui/` | 위쪽 막대, 가운데 막대 |
-| `test/` | 가짜 마이픽 화면(`../tests/fixtures`)과 가짜 Claude 응답으로 하는 전체 흐름 테스트 |
+| `test/` | 가짜 마이픽 화면(`../tests/fixtures`)과 가짜 Claude 응답으로 하는 전체 흐름 테스트(`e2e.mjs`), 회원가입·로그인·사람마다 마이픽 로그인 테스트(`e2e-accounts.mjs`) |
 
 | 확장에서 | 앱에서 |
 |---|---|
@@ -43,7 +43,7 @@
 cd desktop
 npm install
 npm start               # 저장소의 ../extension 을 불러 실행
-npm test                # 전체 흐름 테스트 (Playwright 필요, 리눅스 서버에서는 xvfb-run -a npm test)
+npm test                # 전체 흐름 + 계정 테스트 (Playwright 필요, 리눅스 서버에서는 xvfb-run -a npm test)
 npm run dist:win        # dist/Silo-win32-x64 (Silo.exe), 확장 폴더는 resources/extension 으로 들어감
 ```
 
