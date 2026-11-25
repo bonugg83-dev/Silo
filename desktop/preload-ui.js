@@ -1,0 +1,7 @@
+// 위쪽 막대와 가운데 막대(폭 조절)용
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('silo', {
+  cmd: (c) => ipcRenderer.send('bar:cmd', c),
+  onState: (f) => ipcRenderer.on('bar:state', (_e, s) => f(s)),
+  drag: (phase, x) => ipcRenderer.send('divider:drag', phase, x),
+});

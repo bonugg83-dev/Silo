@@ -1,0 +1,18 @@
+{
+  "name": "silo-desktop",
+  "productName": "Silo",
+  "version": "0.1.0",
+  "description": "Silo 데스크톱 앱: 확장(../extension)을 그대로 Electron 창 안에서 실행",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/e2e.mjs",
+    "dist:win": "electron-packager . Silo --platform=win32 --arch=x64 --out=dist --overwrite --extra-resource=../extension --ignore=^/test --ignore=^/dist --ignore=^/node_modules",
+    "dist:mac": "electron-packager . Silo --platform=darwin --arch=arm64 --out=dist --overwrite --extra-resource=../extension --ignore=^/test --ignore=^/dist --ignore=^/node_modules"
+  },
+  "devDependencies": {
+    "@electron/packager": "18.3.6",
+    "electron": "33.2.1"
+  }
+}
