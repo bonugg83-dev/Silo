@@ -137,41 +137,58 @@ await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 
 panel.on('dialog', (d) => d.accept());
 
-// 1. 키가 없으면 교정하지 않음
-await panel.click('.tab[data-tab="work"]');
+// 1. 키가 없으면 설정이 열려 있고, 교정하지 않음
+await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
+await panel.click('#btnCloseSettings');
+assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
+assert.equal(await panel.textContent('.hd .brand'), 'Silo');
 await panel.click('#btnAnalyze');
 await panel.waitForSelector('#error:not(.hidden)');
 assert.match(await panel.textContent('#error'), /API 키/);
 
-// 2. 키 여러 개: 이름 붙이기, 고르기, 이름 바꾸기, 삭제
-await panel.click('.tab[data-tab="settings"]');
+// 2. 키 여러 개: 이름 붙이기, 고르기, 삭제
+await panel.click('#btnOpenSettings');
+assert.ok(await panel.evaluate(() => document.querySelector('#addKeyBox').classList.contains('open')), '키가 없으면 키 추가 칸이 열려 있음');
 await panel.fill('#newKeyName', 'A사용자 키');
 await panel.fill('#newKeyValue', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
+await panel.click('#btnSaveKey');
 await panel.click('#btnAddKey');
 await panel.fill('#newKeyName', 'B사용자 키');
 await panel.fill('#newKeyValue', 'sk-ant-api03-OTHERKEY_abcdefghijklmnopqrstuvwxyz9999');
 await panel.press('#newKeyValue', 'Enter');
 let rows = panel.locator('#keyList .key-row');
 assert.equal(await rows.count(), 2);
-assert.equal(await rows.nth(0).locator('input[type=text]').inputValue(), 'A사용자 키');
-assert.match(await rows.nth(1).locator('code').textContent(), /…9999$/);
+assert.equal(await rows.nth(0).locator('.name').textContent(), 'A사용자 키');
+assert.match(await rows.nth(1).locator('.name').getAttribute('title'), /…9999$/);
 assert.ok(await rows.nth(1).locator('input[type=radio]').isChecked(), '새로 추가한 키를 사용');
-await rows.nth(0).locator('input[type=radio]').check();
-await rows.nth(0).locator('input[type=text]').fill('A 선생님 키');
-await rows.nth(0).locator('input[type=text]').press('Tab');
-await rows.nth(1).locator('button').click(); // B 삭제
+await rows.nth(0).locator('label').click();
+assert.ok(await rows.nth(0).locator('input[type=radio]').isChecked());
+await rows.nth(1).locator('button.del').click(); // B 삭제
 await panel.waitForFunction(() => document.querySelectorAll('#keyList .key-row').length === 1);
-assert.equal(await rows.nth(0).locator('input[type=text]').inputValue(), 'A 선생님 키');
+assert.equal(await rows.nth(0).locator('.name').textContent(), 'A사용자 키');
 const stored = await panel.evaluate(() => chrome.storage.local.get('settings'));
 assert.equal(stored.settings.keys.length, 1);
-assert.equal(stored.settings.keys[0].name, 'A 선생님 키');
 assert.equal(stored.settings.activeKeyId, stored.settings.keys[0].id);
 assert.ok(!('apiKey' in stored.settings));
-await panel.click('.tab[data-tab="work"]');
+assert.equal(await panel.locator('#btnClearBook').count(), 0, '이 책 기록 지우기 없음');
+await panel.click('#btnCloseSettings');
+// 자동모드를 끄면 이 쪽만 교정
+await panel.click('#btnAuto');
+assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'false');
 
 // 3. 151쪽 교정 (목차 팝업 실패 → 알림, 교정은 계속)
 await panel.click('#btnAnalyze');
-await panel.waitForSelector('#result:not(.hidden)', { timeout: 20000 });
+assert.ok(await panel.isDisabled('#btnAuto'), '교정 중에는 스위치 못 바꿈');
+assert.ok(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('on')), '교정 중 네온');
+await panel.waitForFunction(() => document.querySelector('#result').dataset.state === 'busy' && document.querySelector('#stepLine').textContent.length > 0);
+const seen = new Set();
+const watch = setInterval(async () => { try { seen.add(await panel.textContent('#stepLine')); } catch {} }, 60);
+await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
+clearInterval(watch);
+console.log('단계 표시:', [...seen].join(' / '));
+assert.ok([...seen].some((t) => t.startsWith('편집 화면 읽는 중')), '첫 단계');
+assert.ok([...seen].some((t) => /OCR과 다른 \d+곳 다시 확인하는 중/.test(t)), '2차 검증 단계');
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'));
 assert.ok(await panel.isVisible('#tocAlert'), '목차 실패 알림');
 assert.equal(tocCalls, 0);
 const out = await panel.inputValue('#output');
@@ -204,12 +221,24 @@ assert.ok(await panel.isVisible('#pageDot'));
 assert.match(await panel.getAttribute('#pageDot', 'title'), /2차 검증 수정 못 함/);
 assert.equal(await panel.locator('#flags').count(), 0, '확인할 것 칸 없음');
 if (process.env.SHOTR) { await panel.setViewportSize({ width: 420, height: 800 }); await panel.screenshot({ path: process.env.SHOTR, fullPage: true }); }
-// 토글
+// 보기 칩: 하나만 켜짐
 assert.ok(await panel.isHidden('#diffPanel'));
 await panel.click('#tgOcr');
 assert.ok(await panel.isVisible('#diffPanel'));
-await panel.click('#tgChanges');
+assert.equal(await panel.getAttribute('#tgOcr', 'aria-pressed'), 'true');
 assert.match(await panel.textContent('#notes'), /2차 검증에서 1곳 고침/);
+await panel.click('#tgToc');
+assert.equal(await panel.getAttribute('#tgOcr', 'aria-pressed'), 'false', '다른 칩을 켜면 꺼짐');
+await panel.waitForFunction(() => document.querySelector('#diffPanel').classList.contains('hidden') || true);
+assert.ok(await panel.isVisible('#tocPanel'));
+await panel.click('#tgToc');
+await panel.waitForFunction(() => document.querySelector('#tocPanel').classList.contains('hidden'));
+// 수정하기 → 저장
+await panel.click('#btnToggleEdit');
+assert.equal(await panel.textContent('#btnToggleEdit'), '저장');
+assert.ok(await panel.isVisible('#output'));
+await panel.click('#btnToggleEdit');
+assert.equal(await panel.textContent('#btnToggleEdit'), '수정하기');
 
 // 4. 목차 다시 읽기 → 성공, 다시 교정하면 목차가 전달됨
 tocFail = false;
@@ -221,12 +250,12 @@ assert.deepEqual(tocPagesFetched, [1, 2]);
 await panel.click('#tgToc');
 assert.match(await panel.inputValue('#tocText'), /@@\[06\./);
 await panel.click('#btnAnalyze');
-await panel.waitForFunction(() => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').disabled, null, { timeout: 20000 });
+await panel.waitForFunction(() => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.match(apiCalls.at(-2).body.messages[0].content[1].text, /@@\{1\. 풀잎 145/);
 
-// 5. 편집기에 넣기 (저장은 하지 않음)
+// 5. 복붙하기 (저장은 하지 않음): 흰 물이 차오름
 await panel.click('#btnApply');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('편집기에 넣었어요'), null, { timeout: 20000 });
+await panel.waitForSelector('#btnApply.full', { timeout: 20000 });
 const ed1 = await editor.evaluate(() => CKEDITOR.instances.content.getData());
 assert.ok(ed1.includes('<br>\n52<br>'), '줄마다 <br>');
 assert.ok(ed1.includes('A &amp; B'));
@@ -234,23 +263,27 @@ assert.equal(saves.length, 0, '넣기만, 저장 안 함');
 for (const id of ['btnApplySave', 'btnApplyNext', 'pageStatus', 'timeWarn', 'visualsBox']) assert.equal(await panel.locator('#' + id).count(), 0, id + ' 없음');
 
 // 6. 자동 모드: 151 → 152 → 153(마지막, 그림 자동 넣기)까지 멈추지 않음
-await panel.click('.tab[data-tab="settings"]');
+await panel.click('#btnOpenSettings');
 await panel.click('#btnAdvanced');
 assert.ok(await panel.isChecked('#pacing'), '기본으로 켜짐');
 assert.equal(await panel.inputValue('#paceMinSec'), '60');
 assert.equal(await panel.inputValue('#paceMaxSec'), '90');
-await panel.fill('#paceMinSec', '2');
-await panel.fill('#paceMaxSec', '3');
+await panel.fill('#paceMinSec', '8');
+await panel.fill('#paceMaxSec', '9');
 await panel.click('#btnSaveAdvanced');
 assert.match(await panel.textContent('#todayCost'), /오늘 쓴 비용 약 \$/);
-await panel.click('.tab[data-tab="work"]');
+await panel.click('#btnCloseSettings');
+await panel.click('#btnAuto'); // 자동모드 켬 (켜기만으로는 시작하지 않음)
+assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true');
+assert.equal(apiCalls.length, 4);
 const autoStart = Date.now();
-await panel.click('#btnAuto');
-assert.equal(await panel.textContent('#btnAuto'), '멈추기');
-await panel.waitForFunction(() => /다음 쪽까지 \d+초/.test(document.querySelector('#progress').textContent), null, { timeout: 30000 });
+await panel.click('#btnAnalyze');
+assert.equal(await panel.textContent('#btnAnalyze'), '교정하기', '글자는 그대로');
+await panel.waitForFunction(() => /^\d+s$/.test(document.querySelector('#wait').textContent) && !document.querySelector('#wait').hidden, null, { timeout: 30000 });
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
 console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
-assert.equal(await panel.textContent('#btnAuto'), '자동 모드');
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'));
+assert.ok(!(await panel.isDisabled('#btnAuto')));
 assert.match(editor.url(), /book_page=153/);
 const save151 = saves.find((s) => s.page === 151 && s.gubun === 'next');
 assert.ok(save151.at - autoStart >= 2000, `쪽당 최소 2초 대기 (${save151.at - autoStart}ms)`);
@@ -274,14 +307,15 @@ assert.ok(await panel.isVisible('#reviewBox'));
 assert.match(await panel.textContent('#reviewPages'), /151쪽/);
 
 // 7. 153쪽 다시 교정 → 그림이 본문 @@i 자리에 보이고, 눌러서 영역 고치기
+await panel.click('#btnAuto'); // 이 쪽만
 await panel.click('#btnAnalyze');
-await panel.waitForSelector('#result:not(.hidden)', { timeout: 20000 });
-await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').disabled, null, { timeout: 20000 });
+await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.equal(await panel.locator('#outputView .vthumb img').count(), 1, '본문 안 그림');
 // 편집기에 이미 그림이 있어 그대로 다시 씀 (영역 고치기 없음) → 그림을 지우고 새로 자르는 경우를 보려고 편집기를 OCR로 되돌림
 await editor.evaluate(() => { CKEDITOR.instances.content._data = '153쪽 OCR 본문'; });
 await panel.click('#btnAnalyze');
-await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').disabled && document.querySelector('#outputView .vthumb img'), null, { timeout: 20000 });
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on') && document.querySelector('#outputView .vthumb img'), null, { timeout: 30000 });
 await panel.setViewportSize({ width: 420, height: 900 });
 await panel.click('#outputView .vthumb');
 await panel.waitForSelector('#cropModal:not(.hidden)');
@@ -295,8 +329,9 @@ await panel.mouse.move(hb.x - 60, hb.y - 40, { steps: 5 });
 await panel.mouse.up();
 await panel.click('#btnCropApply');
 await panel.waitForFunction((b) => document.querySelector('#outputView .vthumb img')?.naturalWidth && document.querySelector('#outputView .vthumb img').naturalWidth !== b, before);
+await panel.waitForFunction(() => !document.querySelector('#btnApply').classList.contains('full'));
 await panel.click('#btnApply');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('편집기에 넣었어요'), null, { timeout: 20000 });
+await panel.waitForSelector('#btnApply.full', { timeout: 20000 });
 assert.equal(uploads.length, 2, '새로 자른 그림만 올림');
 
 // 8. 검수: 151쪽 열기 → 확인함 (고친 것 없으면 저장 없이 확인)
@@ -311,6 +346,28 @@ await panel.click('#btnReviewed');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽 확인함'), null, { timeout: 20000 });
 assert.equal(saves.length, savesBefore, '고친 게 없으면 저장하지 않음');
 assert.match(await panel.textContent('#reviewSummary'), /모두 확인했어요/);
+
+// 9. 자동모드로 시작한 뒤 교정하기를 한 번 더 누르면: 어두워지고, 하던 쪽만 끝내고 멈춤 (다음 쪽으로 안 감)
+await panel.click('#btnAuto');
+const nextSaves = saves.filter((s) => s.gubun === 'next').length;
+const callsBefore = apiCalls.length;
+await panel.click('#btnAnalyze');
+await panel.waitForFunction(() => document.querySelector('#result').dataset.state === 'busy');
+await panel.click('#btnAnalyze');
+assert.ok(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('stopping')), '멈추기 요청: 어둡게');
+await panel.click('#btnAnalyze'); // 어두운 동안엔 더 눌러도 그대로
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
+assert.equal(await panel.getAttribute('#result', 'data-state'), 'done', '하던 쪽 결과는 보여 줌');
+assert.equal(saves.filter((s) => s.gubun === 'next').length, nextSaves, '다음 쪽으로 넘어가지 않음');
+assert.ok(apiCalls.length > callsBefore && apiCalls.length <= callsBefore + 2, '한 쪽만 교정');
+assert.ok(!(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('stopping'))));
+
+// 10. 설정은 오른쪽에서 밀려 들어옴
+await panel.click('#btnOpenSettings');
+await panel.waitForTimeout(500);
+const sb = await panel.locator('#settings').boundingBox();
+assert.ok(Math.abs(sb.x) < 2, '설정 열림');
+await panel.click('#btnCloseSettings');
 
 if (process.env.SHOT) { await panel.screenshot({ path: process.env.SHOT, fullPage: true }); }
 assert.deepEqual(errors, []);

@@ -56,9 +56,10 @@ const panel = await context.newPage();
 panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 panel.on('dialog', (d) => d.accept());
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
+await panel.waitForFunction(() => document.querySelector('#addKeyBox').classList.contains('open'));
 await panel.fill('#newKeyName', '연습 키');
 await panel.fill('#newKeyValue', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
-await panel.click('#btnAddKey');
+await panel.click('#btnSaveKey');
 await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '2');
@@ -70,10 +71,10 @@ practice.on('pageerror', (e) => errors.push('practice: ' + e.message));
 await practice.waitForLoadState();
 await practice.waitForFunction(() => document.querySelector('#book_img').complete && document.querySelector('#book_img').naturalWidth > 0);
 assert.equal(await practice.textContent('#pageCount'), '5');
-await panel.click('.tab[data-tab="work"]');
+await panel.click('#btnCloseSettings');
 
-// 자동 모드(끝까지 진행): 빨간 항목이 있어도 멈추지 않고 마지막 쪽까지 저장
-await panel.click('#btnAuto');
+// 자동모드(기본 켜짐)로 교정하기: 빨간 항목이 있어도 멈추지 않고 마지막 쪽까지 저장
+await panel.click('#btnAnalyze');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
 console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
 assert.match(apiCalls[0].text, /남풍의 밤이 여- 큰 별/); // 실제 OCR 전달
