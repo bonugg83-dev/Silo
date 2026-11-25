@@ -61,10 +61,21 @@ async function addCost(usd) {
   await chrome.storage.local.set({ [key]: (r[key] || 0) + usd });
   showTodayCost();
 }
+/** 쪽 하나 교정이 끝날 때: 쪽당 평균과 토큰 기록 (비용 비교용, 최근 300쪽) */
+async function logPage(entry) {
+  const day = `costpages:${new Date().toLocaleDateString('sv')}`;
+  const r = await chrome.storage.local.get([day, 'usageLog']);
+  const log = [...(r.usageLog || []), { at: Date.now(), ...entry }].slice(-300);
+  await chrome.storage.local.set({ [day]: (r[day] || 0) + 1, usageLog: log });
+  showTodayCost();
+}
 async function showTodayCost() {
-  const key = `cost:${new Date().toLocaleDateString('sv')}`;
-  const usd = (await chrome.storage.local.get(key))[key] || 0;
-  $('todayCost').textContent = `오늘 쓴 비용 약 $${usd.toFixed(2)} (약 ${Math.round(usd * 1450).toLocaleString()}원)`;
+  const d = new Date().toLocaleDateString('sv');
+  const r = await chrome.storage.local.get([`cost:${d}`, `costpages:${d}`]);
+  const usd = r[`cost:${d}`] || 0;
+  const pages = r[`costpages:${d}`] || 0;
+  $('todayCost').textContent = `오늘 쓴 비용 약 $${usd.toFixed(2)} (약 ${Math.round(usd * 1450).toLocaleString()}원)`
+    + (pages ? ` · ${pages}쪽, 쪽당 약 ${Math.round((usd * 1450) / pages).toLocaleString()}원` : '');
 }
 let editing = false;
 
@@ -512,6 +523,7 @@ async function analyze() {
   const extraFlags = [];
   const noteLines = [];
   const skipOmission = ['toc', 'index_ad'].includes(result.page_kind);
+  let r2usage = null;
 
   stepper.skipStep('verify');
   if (settings.verify) {
@@ -524,7 +536,8 @@ async function analyze() {
         userText: buildVerifyMessage(ctx, checked.text, diffs, omitted, { full: settings.verifyFull }),
       });
       cost += estimateCostUsd(settings.model, r2.usage);
-      const fx = applyFixes(checked.text, r2.result.fixes);
+      r2usage = r2.usage;
+      const fx = applyFixes(checked.text, r2.result.fixes, (x) => applyRules(x, { ...ruleOpts, allowBlankLines: true }).text);
       for (const f of fx.failed) {
         extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
           message: `2차 검증 수정 못 함: “${f.fix.find}” → “${f.fix.replace}”` });
@@ -564,6 +577,12 @@ async function analyze() {
   }
   stepper.reach('check');
   addCost(cost);
+  const sumUsage = (...us) => us.filter(Boolean).reduce((a, u) => ({
+    in: a.in + (u.input_tokens || 0), cw: a.cw + (u.cache_creation_input_tokens || 0),
+    cr: a.cr + (u.cache_read_input_tokens || 0), out: a.out + (u.output_tokens || 0),
+  }), { in: 0, cw: 0, cr: 0, out: 0 });
+  logPage({ model: settings.model, usd: cost, calls: r2usage ? 2 : 1, zoom: zoomImgs.length > 0, verifyFull: !!settings.verifyFull,
+    ...sumUsage(r1.usage, r2usage) });
 
   // 다른 쪽에 걸친 각주
   const footMissing = (result.footnotes_without_note || []).map((f) => f.label).filter(Boolean);

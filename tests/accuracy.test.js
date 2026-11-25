@@ -85,3 +85,12 @@ test('사이드 패널이 쓰는 이름을 모듈들이 모두 내보냄', async
     for (const name of m[1].split(',').map((x) => x.trim()).filter(Boolean)) assert.ok(name in mod, `${m[2]}.js에 ${name} 없음`);
   }
 });
+
+test('2차 검증 고칠 곳: 자판 따옴표로 적어도 규칙으로 다듬어 다시 찾음', async () => {
+  const { applyFixes } = await import('../extension/lib/fixes.js');
+  const { applyRules } = await import('../extension/lib/rules.js');
+  const text = '그는 “안녕”이라고 말했다.';
+  const r = applyFixes(text, [{ find: '"안녕"이라고', replace: '"안녕하세요"라고', reason: '' }], (x) => applyRules(x).text);
+  assert.equal(r.text, '그는 “안녕하세요”라고 말했다.');
+  assert.equal(r.failed.length, 0);
+});
