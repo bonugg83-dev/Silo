@@ -92,7 +92,8 @@
         <div class="row"><button id="btnSaveToc">목차 저장</button><button id="btnRebuildToc">목차 다시 읽기</button></div>
       </details>
 
-      <p class="small muted footnote">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
+      <div class="row footnote"><button id="btnPractice" class="small-btn">연습 페이지 열기</button><span class="small muted">배정 없이 예시 쪽이나 내 원본으로 시험해 볼 수 있어요.</span></div>
+      <p class="small muted">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
     </section>
 
     <!-- 설정: 키와 모델 -->
@@ -111,6 +112,11 @@
       <div class="card">
         <h2>AI 모델</h2>
         <select id="model"></select>
+      </div>
+      <div class="card">
+        <h2>연습</h2>
+        <p class="small muted">실제 사이트로는 아무것도 보내지 않는 연습용 편집 화면이에요. Claude 호출은 실제로 해서 비용이 들어요.</p>
+        <button id="btnPractice2">연습 페이지 열기</button>
       </div>
       <div id="settingsMsg" class="small muted"></div>
     </section>

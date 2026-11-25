@@ -166,17 +166,28 @@ function setBusy(busy) {
   $('btnAuto').disabled = busy && !autoRunning;
 }
 
+const PRACTICE_URL = chrome.runtime.getURL('practice/practice.html');
+const isPracticeUrl = (u) => String(u || '').startsWith(PRACTICE_URL);
+
 async function getEditorTab() {
-  const isEditor = (t) => /mypickebook\.org\/making\/make_book\.html/.test(t?.url || '');
+  const isEditor = (t) => /mypickebook\.org\/making\/make_book\.html/.test(t?.url || '') || isPracticeUrl(t?.url);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (isEditor(tab)) return tab;
   const all = (await chrome.tabs.query({})).filter(isEditor);
   if (all.length === 1) return all[0];
   throw new Error(all.length > 1
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
-    : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요.');
+    : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “연습 페이지 열기”를 누르세요.');
 }
 async function runInPage(tabId, func, args = []) {
+  const tab = await chrome.tabs.get(tabId);
+  if (isPracticeUrl(tab.url)) {
+    // 연습 페이지는 확장 프로그램 안의 페이지라 같은 함수를 그 페이지가 직접 실행한다
+    const r = await chrome.runtime.sendMessage({ practiceCall: true, tabId, fn: func.name, args });
+    if (!r) throw new Error('연습 페이지가 아직 준비되지 않았어요.');
+    if (!r.ok) throw new Error(r.error);
+    return r.result;
+  }
   const [r] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
   return r?.result;
 }
@@ -944,6 +955,18 @@ async function rebuildToc() {
 }
 $('btnRebuildToc').addEventListener('click', guard(rebuildToc));
 $('btnTocRetry').addEventListener('click', guard(rebuildToc));
+
+async function openPractice() {
+  const existing = (await chrome.tabs.query({})).find((t) => isPracticeUrl(t.url));
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: `${PRACTICE_URL}?idx=0&book_page=1` });
+  }
+}
+$('btnPractice').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
+$('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
 
 chrome.tabs.onActivated.addListener(() => refreshStatus());
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !autoRunning) refreshStatus(); });

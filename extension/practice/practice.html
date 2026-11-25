@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>연습 페이지 - 마이픽 교정 도우미</title>
+  <link rel="stylesheet" href="practice.css">
+</head>
+<body>
+  <div class="banner">연습 페이지예요. 실제 마이픽 편집 화면처럼 동작하지만 <b>사이트로는 아무것도 보내지 않아요.</b> 저장·그림 올리기는 이 컴퓨터 안에서만 흉내 내요. Claude 호출은 실제로 하므로 비용이 들어요(패널 아래에 표시).</div>
+  <div id="makeBook">
+    <div class="makeTop">
+      <div class="contral">
+        <button type="button" id="btnPrev">이전</button>
+        <div class="paging"><input type="text" id="curr_page" value="1" curr-page="1" readonly> / <span id="pageCount">1</span></div>
+        <button type="button" id="btnNext">다음</button>
+      </div>
+      <div id="pageLabel" class="label"></div>
+      <div class="time">03시간 00분 00초</div>
+    </div>
+    <div class="makeCon">
+      <div class="lfImg"><img id="book_img" alt="원본 쪽"></div>
+      <div class="rtEdit">
+        <div id="preview" class="preview"></div>
+        <details><summary>편집기 데이터(HTML) 보기</summary><textarea id="content" spellcheck="false"></textarea></details>
+      </div>
+    </div>
+    <div class="makeBotm">
+      페이지번호 <input type="text" id="page_num" size="5">
+      <label><input type="checkbox" id="none_page" value="Y"> 페이지번호 없음</label>
+      <button type="button" id="btnTemp">임시저장</button>
+      <span class="muted">(제출하기 버튼은 없어요)</span>
+    </div>
+    <div class="makeSide">
+      <div class="makeInfor"><h2>임헌영의 미국문학기행 (연습)</h2><ul><li>지은이 : 임헌영 지음</li><li>출판사 : 역사비평사</li></ul></div>
+      <div class="makeTip"><p class="tipTit">&lt;제작 Tip&gt;</p>-</div>
+    </div>
+  </div>
+
+  <section class="tools">
+    <h2>내 원본 이미지로 시험하기</h2>
+    <p class="muted">쪽 이미지(사진이나 캡처)를 넣으면 예시 쪽 뒤에 연습 쪽으로 붙어요. OCR 글자는 있으면 붙여 넣고, 없으면 비워 두세요. 이 컴퓨터의 크롬에만 저장돼요.</p>
+    <div class="row"><input type="file" id="customFile" accept="image/*" multiple></div>
+    <div class="row"><input type="text" id="customPageNum" placeholder="인쇄된 쪽 번호 (선택)" size="18"></div>
+    <textarea id="customOcr" placeholder="OCR 글자 (선택, 여러 장을 넣으면 첫 장에만 들어가요)"></textarea>
+    <div class="row"><button type="button" id="btnAddCustom">내 쪽 추가</button> <span id="customMsg" class="muted"></span></div>
+    <ul id="customList"></ul>
+    <h2>연습 기록</h2>
+    <div class="row">
+      <button type="button" id="btnReset">저장한 내용·남은 시간·목차 처음으로</button>
+    </div>
+    <p class="muted">저장해 둔 연습 내용, 남은 시간(3시간), 도우미가 기억한 이 연습 책의 이전 쪽·목차를 지워요.</p>
+  </section>
+  <script type="module" src="practice.js"></script>
+</body>
+</html>
