@@ -15,9 +15,25 @@ const bare = (s) => squash(s)
  */
 export function findOmissions(ocr, result, { minChars = 10 } = {}) {
   const ocrLines = String(ocr ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
-  // 머리말·꼬리말 후보: 첫 줄·마지막 줄이 짧으면 지워도 되는 줄
-  const edge = new Set([ocrLines[0], ocrLines[ocrLines.length - 1]].filter((l) => l && squash(l).length <= 40).map(bare));
+  // 머리말·꼬리말 후보: 첫 줄·마지막 줄이 짧으면 지워도 되는 줄.
+  // 마침표로 끝나는 줄(쪽 아래 각주·출처·작은 글씨 문장)은 머리말이 아니므로 뺀다.
+  const isEdge = (l) => l && squash(l).length <= 40 && !/[.。]["”’)]?$/.test(l);
+  const edge = new Set([ocrLines[0], ocrLines[ocrLines.length - 1]].filter(isEdge).map(bare));
   const resBare = bare(result);
+  // 각주 번호(위 첨자)가 OCR에서 글자에 붙어 나오므로 숫자를 뺀 비교도 한다
+  const noNum = (x) => x.replace(/\d+/g, '');
+  const resNoNum = noNum(resBare);
+  // 본문 안에 끼워 넣은 각주 설명을 뺀 글 (번호 자리에 설명이 들어가 앞뒤 문장이 갈라진 경우)
+  const resNoNote = noNum(bare(String(result ?? '').replace(/\[(각주|미주|주석|후주|주)[^\]]*\]/g, '')));
+  const kept = (b) => {
+    for (const [hay, x] of [[resBare, b], [resNoNum, noNum(b)], [resNoNote, noNum(b)]]) {
+      if (hay.includes(x)) return true; // 다른 자리로 옮긴 것(각주 설명 등)
+      // 반 이상이 결과에 그대로 있으면 줄바꿈·부호 차이로 본다
+      const half = Math.ceil(x.length / 2);
+      if (hay.includes(x.slice(0, half)) && hay.includes(x.slice(-half))) return true;
+    }
+    return false;
+  };
   const parts = diffWords(ocr, result);
   const out = [];
   for (let k = 0; k < parts.length; k++) {
@@ -31,10 +47,7 @@ export function findOmissions(ocr, result, { minChars = 10 } = {}) {
       if (b.length < minChars) continue;
       if (/^\d+$/.test(b)) continue; // 쪽 번호
       if ([...edge].some((e) => e && (e.includes(b) || b.includes(e)))) continue;
-      if (resBare.includes(b)) continue; // 다른 자리로 옮긴 것(각주 설명 등)
-      // 반 이상이 결과에 그대로 있으면 줄바꿈·부호 차이로 본다
-      const half = Math.ceil(b.length / 2);
-      if (resBare.includes(b.slice(0, half)) && resBare.includes(b.slice(-half))) continue;
+      if (kept(b)) continue;
       out.push(chunk.trim());
     }
   }
