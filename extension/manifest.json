@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "마이픽 전자도서 교정 도우미",
-  "version": "0.7.0",
-  "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 줍니다.",
+  "name": "Silo",
+  "version": "0.8.0",
+  "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 주는 교정 도우미입니다.",
   "permissions": [
     "sidePanel",
     "storage",
@@ -24,7 +24,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "마이픽 교정 도우미 열기"
+    "default_title": "Silo 열기"
   },
   "icons": {
     "128": "icon128.png"

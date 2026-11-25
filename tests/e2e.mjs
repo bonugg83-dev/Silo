@@ -141,7 +141,7 @@ panel.on('dialog', (d) => d.accept());
 await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
 await panel.click('#btnCloseSettings');
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
-assert.equal(await panel.textContent('.hd .brand'), 'Silo');
+assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
 await panel.click('#btnAnalyze');
 await panel.waitForSelector('#error:not(.hidden)');
 assert.match(await panel.textContent('#error'), /API 키/);

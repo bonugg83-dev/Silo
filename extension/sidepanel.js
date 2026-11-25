@@ -14,6 +14,7 @@ import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
+import { playSplash } from './lib/splash.js';
 
 const $ = (id) => document.getElementById(id);
 const TOC_VERSION = 2;
@@ -1426,6 +1427,8 @@ chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });
 setInterval(() => { if (!running) refreshStatus(); }, 15000);
 setInterval(() => { if (!running) cleanupBooks(); }, 3600 * 1000);
+
+playSplash($('brand')).catch(() => {});
 
 (async () => {
   await loadSettings();
