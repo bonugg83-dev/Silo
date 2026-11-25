@@ -90,19 +90,55 @@ export async function pageFetchImage(src) {
   }
 }
 
-/** [목차보기] 팝업 페이지를 가져와 텍스트로 만든다. */
+/**
+ * [목차보기] 팝업은 목차를 쪽마다 이미지로 보여 준다(?page=1,2,...).
+ * 모든 목차 쪽의 이미지를 data URL로 가져오고, 글자가 있으면 글자도 함께 돌려준다.
+ */
 export async function pageFetchToc(bookIdx) {
-  try {
-    const res = await fetch('/module/book/table_of_content.php?book_idx=' + encodeURIComponent(bookIdx), { credentials: 'include' });
-    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+  const base = '/module/book/table_of_content.php?book_idx=' + encodeURIComponent(bookIdx);
+  const toDataUrl = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+  async function getPage(n) {
+    const res = await fetch(base + (n > 1 ? '&page=' + n : ''), { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const html = await res.text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    doc.querySelectorAll('script, style, head').forEach((n) => n.remove());
-    doc.querySelectorAll('br').forEach((n) => n.replaceWith('\n'));
-    doc.querySelectorAll('p, div, li, tr, h1, h2, h3, h4, h5, h6').forEach((n) => n.append('\n'));
-    // 들여쓰기/단계 정보가 class에 있으면 남긴다
-    const text = (doc.body ? doc.body.textContent : '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
-    return { ok: true, text: text.slice(0, 20000) };
+    const wrap = doc.querySelector('.feed_wrap') || doc.body;
+    let maxPage = 1;
+    wrap.querySelectorAll('.page a[href*="page="]').forEach((a) => {
+      const m = a.getAttribute('href').match(/[?&]page=(\d+)/);
+      if (m) maxPage = Math.max(maxPage, parseInt(m[1], 10));
+    });
+    wrap.querySelectorAll('.page a').forEach((a) => {
+      const n2 = parseInt(a.textContent.trim(), 10);
+      if (!isNaN(n2)) maxPage = Math.max(maxPage, n2);
+    });
+    const imgs = Array.from(wrap.querySelectorAll('img'))
+      .filter((i) => !i.closest('.page') && !/ic_page_/.test(i.getAttribute('src') || ''))
+      .map((i) => new URL(i.getAttribute('src'), location.origin + base).href);
+    const clone = wrap.cloneNode(true);
+    clone.querySelectorAll('.page, script, style, h1').forEach((x) => x.remove());
+    const text = clone.textContent.replace(/\s+/g, ' ').trim();
+    return { maxPage, imgs, text };
+  }
+  try {
+    const first = await getPage(1);
+    const pages = [first];
+    const last = Math.min(first.maxPage, 12);
+    for (let n = 2; n <= last; n++) pages.push(await getPage(n));
+    const images = [];
+    for (const p of pages) {
+      for (const src of p.imgs.slice(0, 2)) {
+        const res = await fetch(src, { credentials: 'include' });
+        if (res.ok) images.push(await toDataUrl(await res.blob()));
+      }
+    }
+    const text = pages.map((p) => p.text).filter(Boolean).join('\n').slice(0, 20000);
+    return { ok: true, pageCount: pages.length, images: images.slice(0, 12), text };
   } catch (e) {
     return { ok: false, error: e.message };
   }

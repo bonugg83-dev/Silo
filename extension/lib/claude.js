@@ -23,22 +23,27 @@ function parseDataUrl(dataUrl) {
 }
 
 /** 페이지 이미지 + 지시문으로 구조화된 결과를 받는다. */
-export async function callClaude({ apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true }) {
+export async function callClaude(params) {
+  const { apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true,
+    schema = RESULT_SCHEMA, system = SYSTEM_PROMPT } = params;
+  const images = params.images || [imageDataUrl];
   if (!apiKey) throw new ClaudeError('설정에서 Claude API 키를 넣어 주세요.');
-  const img = parseDataUrl(imageDataUrl);
   const body = {
     model,
     max_tokens: 20000,
     thinking: { type: 'adaptive' },
     output_config: {
       effort,
-      format: { type: 'json_schema', schema: RESULT_SCHEMA },
+      format: { type: 'json_schema', schema },
     },
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
     messages: [{
       role: 'user',
       content: [
-        { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } },
+        ...images.map((u) => {
+          const img = parseDataUrl(u);
+          return { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } };
+        }),
         { type: 'text', text: userText },
       ],
     }],
@@ -72,7 +77,7 @@ export async function callClaude({ apiKey, model, effort, imageDataUrl, userText
   if (!res.ok) {
     const msg = json?.error?.message || `HTTP ${res.status}`;
     if (res.status === 400 && useFallbacks && /fallback/i.test(msg)) {
-      return callClaude({ apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks: false });
+      return callClaude({ ...params, useFallbacks: false });
     }
     if (res.status === 401) throw new ClaudeError('API 키가 올바르지 않아요. 설정을 확인해 주세요.', { status: 401 });
     if (res.status === 402 || /credit|billing/i.test(msg)) throw new ClaudeError('API 크레딧이 부족해요: ' + msg, { status: res.status });

@@ -1,6 +1,6 @@
 import { applyRules } from './lib/rules.js';
 import { diffWords, disagreements } from './lib/diff.js';
-import { buildWriteMessage, buildVerifyMessage } from './lib/prompt.js';
+import { buildWriteMessage, buildVerifyMessage, buildTocMessage, TOC_SYSTEM_PROMPT, TOC_SCHEMA } from './lib/prompt.js';
 import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import { pageRead, pageFetchImage, pageFetchToc, pageApply, pageSave } from './lib/page.js';
 import { editorHtmlToText, textToEditorData, downscaleImage } from './lib/convert.js';
@@ -192,9 +192,27 @@ async function analyze() {
 
   const book = await getBook(info.bookIdx);
   if (settings.useToc && !book.toc) {
-    setProgress('목차를 가져오는 중…');
+    setProgress('목차 이미지를 가져오는 중… (책마다 처음 한 번)');
     const toc = await runInPage(tab.id, pageFetchToc, [info.bookIdx]);
-    if (toc?.ok && toc.text) {
+    if (toc?.ok && toc.images?.length) {
+      setProgress(`Claude가 목차 ${toc.images.length}쪽을 읽고 단계를 정리하는 중…`);
+      const imgs = [];
+      for (const u of toc.images) imgs.push(await downscaleImage(u, 1800));
+      try {
+        const rt = await callClaude({
+          apiKey: settings.apiKey, model: settings.model, effort: settings.effort,
+          images: imgs, userText: buildTocMessage(info.bookInfo, toc.text), signal: abort.signal,
+          system: TOC_SYSTEM_PROMPT, schema: TOC_SCHEMA,
+        });
+        sessionCost += estimateCostUsd(settings.model, rt.usage);
+        book.toc = rt.result.toc;
+        book.tocNotes = rt.result.notes;
+        await putBook(info.bookIdx, book);
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        console.warn('목차 정리 실패', e);
+      }
+    } else if (toc?.ok && toc.text) {
       book.toc = toc.text;
       await putBook(info.bookIdx, book);
     }
@@ -246,6 +264,8 @@ async function analyze() {
 
   current = { tabId: tab.id, info, ocrText, result, checked, cost };
   render();
+  $('tocText').value = book.toc || '';
+  $('tocNotes').textContent = book.tocNotes || '';
   setProgress('');
   return current;
 }
@@ -506,6 +526,41 @@ $('btnClearBook').addEventListener('click', guard(async () => {
   await chrome.storage.local.remove(`book:${info.bookIdx}`);
   $('settingsMsg').textContent = '이 책의 작업 기록(이전 쪽 내용, 목차)을 지웠어요.';
 }));
+
+async function loadTocBox() {
+  try {
+    const tab = await getEditorTab();
+    const info = await runInPage(tab.id, pageRead);
+    const book = await getBook(info.bookIdx);
+    $('tocText').value = book.toc || '';
+    $('tocNotes').textContent = book.tocNotes || '';
+    return info;
+  } catch (e) {
+    $('tocText').value = '';
+    return null;
+  }
+}
+$('tocBox').addEventListener('toggle', () => { if ($('tocBox').open) loadTocBox(); });
+$('btnSaveToc').addEventListener('click', guard(async () => {
+  const info = await loadTocBoxInfo();
+  const book = await getBook(info.bookIdx);
+  book.toc = $('tocText').value.trim();
+  await putBook(info.bookIdx, book);
+  setProgress('목차를 저장했어요.');
+}));
+$('btnRebuildToc').addEventListener('click', guard(async () => {
+  const info = await loadTocBoxInfo();
+  const book = await getBook(info.bookIdx);
+  book.toc = null;
+  book.tocNotes = '';
+  await putBook(info.bookIdx, book);
+  $('tocText').value = '';
+  setProgress('다음에 “이 쪽 교정하기”를 누르면 목차를 다시 읽어요.');
+}));
+async function loadTocBoxInfo() {
+  const tab = await getEditorTab();
+  return runInPage(tab.id, pageRead);
+}
 
 chrome.tabs.onActivated.addListener(() => refreshStatus());
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !autoRunning) refreshStatus(); });

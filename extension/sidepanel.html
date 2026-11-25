@@ -66,6 +66,14 @@
         <div id="cost" class="small muted"></div>
       </div>
 
+      <details class="card" id="tocBox">
+        <summary>이 책 목차 (단계 표시)</summary>
+        <p class="small muted">[목차보기] 이미지를 Claude가 읽어 정리한 것이에요. 단계가 틀렸으면 고치고 저장하세요. 쪽마다 제목 단계 판단에 쓰여요.</p>
+        <textarea id="tocText" spellcheck="false" placeholder="아직 없어요. 첫 쪽을 교정할 때 자동으로 만들어져요."></textarea>
+        <div id="tocNotes" class="small muted pre"></div>
+        <div class="row"><button id="btnSaveToc">목차 저장</button><button id="btnRebuildToc">목차 다시 읽기</button></div>
+      </details>
+
       <p class="small muted footnote">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
     </section>
 

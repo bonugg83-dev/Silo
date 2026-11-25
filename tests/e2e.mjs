@@ -33,6 +33,8 @@ function resultFor(page, call) {
 }
 
 const apiCalls = [];
+const tocPagesFetched = [];
+let tocCalls = 0;
 const saves = [];
 const userDataDir = fs.mkdtempSync('/tmp/claude-0/e2e-');
 const context = await chromium.launchPersistentContext(userDataDir, {
@@ -51,8 +53,17 @@ await context.route('https://www.mypickebook.org/**', async (route) => {
   }
   if (url.pathname === '/making/file.php') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: pageImg });
   if (url.pathname === '/module/book/table_of_content.php') {
-    return route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body><ul><li>06. 대지와 민중을 사랑한 국민시인 휘트먼 140</li></ul></body></html>' });
+    // 실제 목차 팝업처럼: 쪽 이동 링크 + 목차 이미지 한 장
+    const p = Number(url.searchParams.get('page') || 1);
+    tocPagesFetched.push(p);
+    const body = `<html><body><div class="feed_wrap"><h1 class="title2">목차</h1><div class="page"><div class="num">
+      <a href="javascript:;"><img src="/img/ic_page_before.png" alt="이전"></a><a class="on">1</a>
+      <a href="/module/book/table_of_content.php?page=2&amp;book_idx=23584">2</a>
+      <a href="javascript:;"><img src="/img/ic_page_next.png" alt="다음"></a></div></div>
+      <div><img src="/common/file.php?toc=${p}" style="max-width:100%;"></div></div></body></html>`;
+    return route.fulfill({ status: 200, contentType: 'text/html', body });
   }
+  if (url.pathname === '/common/file.php') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: pageImg });
   if (url.pathname === '/making/make_save_proc.php') {
     saves.push(JSON.parse(route.request().postData()));
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{"result":200}' });
@@ -64,7 +75,13 @@ await context.route('https://api.anthropic.com/**', async (route) => {
   const req = route.request();
   const body = JSON.parse(req.postData());
   const headers = req.headers();
-  const userText = body.messages[0].content[1].text;
+  if (/차례\(목차\) 페이지 이미지/.test(body.system[0].text)) {
+    tocCalls++;
+    assert.equal(body.messages[0].content.filter((c) => c.type === 'image').length, 2, '목차 이미지 2장');
+    return route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ toc: '@@[06. 대지와 민중을 사랑한 국민시인 휘트먼 140\n@@{1. 풀잎 145', notes: '' }) }], usage: { input_tokens: 4000, output_tokens: 500 } }) });
+  }
+  const userText = body.messages[0].content.at(-1).text;
   const page = Number((userText.match(/작업 쪽: (\d+)/) || [])[1]);
   const call = /draft_text/.test(userText) ? 2 : 1;
   apiCalls.push({ page, call, body, headers }); if (process.env.DEBUG) console.log(userText.slice(0, 1500));
@@ -119,7 +136,10 @@ assert.equal(c1.headers['anthropic-dangerous-direct-browser-access'], 'true');
 assert.equal(c1.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
 assert.equal(c1.body.messages[0].content[0].type, 'image');
 assert.match(c1.body.messages[0].content[1].text, /미주는 '주석'으로/); // 제작 Tip
-assert.match(c1.body.messages[0].content[1].text, /휘트먼 140/); // 목차
+assert.match(c1.body.messages[0].content[1].text, /@@\{1\. 풀잎 145/); // 목차 (이미지에서 정리)
+assert.equal(tocCalls, 1);
+assert.deepEqual(tocPagesFetched, [1, 2]);
+assert.match(await panel.inputValue('#tocText'), /@@\[06\./);
 assert.match(c1.body.messages[0].content[1].text, /남풍의 밤이 여- 큰 별/); // OCR 텍스트
 assert.match(apiCalls[1].body.messages[0].content[1].text, /ocr_vs_draft_differences/);
 assert.ok(out.includes('밤이여―오라 “매력”과'), '줄표/따옴표 교정');
@@ -161,5 +181,6 @@ assert.match(call153.body.messages[0].content[1].text, /152쪽: @@\{152쪽 제�
 
 if (process.env.SHOT) { await panel.setViewportSize({ width: 420, height: 1300 }); await panel.screenshot({ path: process.env.SHOT, fullPage: true }); }
 assert.deepEqual(errors, []);
+assert.equal(tocCalls, 1, '목차는 책마다 한 번만');
 console.log(`\n통과: API 호출 ${apiCalls.length}회, 저장 ${saves.length}회`);
 await context.close();
