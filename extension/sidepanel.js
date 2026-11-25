@@ -11,7 +11,7 @@ import { findLinks, putNoteAtMarker, removeNoteLine } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
-import { tidyMessage, sortReview } from './lib/issues.js';
+import { tidyMessage, sortReview, reviewCounts } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
 import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
@@ -1513,6 +1513,32 @@ function updateReviewBadge(book) {
   $('btnReview').classList.toggle('hidden', running || !Object.keys(book.pages || {}).length);
 }
 
+/** 검수 창 맨 위: 남은 빨강·노랑 쪽 수와 진행 막대 */
+function reviewSummary(c) {
+  const sum = document.createElement('div');
+  sum.className = 'rv-sum';
+  const nums = document.createElement('div');
+  nums.className = 'rv-nums';
+  const num = (cls, n, label) => {
+    const sp = Object.assign(document.createElement('span'), { className: cls });
+    sp.append(Object.assign(document.createElement('b'), { textContent: n }), label);
+    return sp;
+  };
+  nums.append(num('nr', c.red, '꼭 볼 쪽'), num('ny', c.yellow, '참고'), num('', c.done, `/ ${c.total} 끝`));
+  const bar = document.createElement('div');
+  bar.className = 'rv-bar';
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', `전체 ${c.total}쪽 중 ${c.done}쪽 끝, 꼭 볼 쪽 ${c.red}, 참고 ${c.yellow}`);
+  for (const [n, cls] of [[c.done, 'bd'], [c.yellow, 'by'], [c.red, 'br']]) {
+    const sp = document.createElement('span');
+    sp.className = cls;
+    sp.style.width = `${c.total ? (n / c.total) * 100 : 0}%`;
+    bar.append(sp);
+  }
+  sum.append(nums, bar);
+  return sum;
+}
+
 async function renderReview() {
   let info;
   try {
@@ -1555,6 +1581,7 @@ async function renderReview() {
 
   const box = $('reviewPages');
   box.innerHTML = '';
+  box.append(reviewSummary(reviewCounts(book.pages)));
   const list = sortReview(book.pages, { desc: reviewDesc, showAll: reviewShowAll });
   if (!list.length) {
     box.append(Object.assign(document.createElement('div'), { className: 'rv-empty', textContent: '확인할 쪽이 없어요' }));
@@ -1564,27 +1591,23 @@ async function renderReview() {
     row.className = `rv-row t${tier}${rec.reviewed ? ' done' : ''}`;
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
-    row.setAttribute('aria-label', `${n}쪽 열기`);
-    const dot = document.createElement('span');
-    dot.className = 'rv-dot';
     const main = document.createElement('div');
     main.className = 'rv-main';
-    const h = document.createElement('div');
-    h.className = 'rv-title';
-    h.textContent = `${n}쪽`;
-    if (rec.pageNumber) h.append(Object.assign(document.createElement('span'), { className: 'note', textContent: ` · ${rec.pageNumber}` }));
-    main.append(h);
-    if ((rec.issues || []).length) {
-      const ul = document.createElement('ul');
-      // 빨강 먼저
-      for (const it of [...rec.issues].sort((x, y) => (x.cls === 'review' ? 0 : 1) - (y.cls === 'review' ? 0 : 1))) {
-        const li = document.createElement('li');
-        li.className = it.cls;
-        li.textContent = tidyMessage(it.text);
-        ul.appendChild(li);
-      }
-      main.append(ul);
+    const top = document.createElement('div');
+    top.className = 'rv-top';
+    top.append(Object.assign(document.createElement('span'), { className: 'rv-pg', textContent: `${n}쪽` }));
+    if (rec.pageNumber) top.append(Object.assign(document.createElement('span'), { className: 'note', textContent: `쪽 번호 ${rec.pageNumber}` }));
+    main.append(top);
+    // 가장 중요한 문제(빨강 먼저) 한 줄만, 나머지는 "+N" (전체 문장은 마우스를 올리면 보임)
+    const iss = [...(rec.issues || [])].sort((x, y) => (x.cls === 'review' ? 0 : 1) - (y.cls === 'review' ? 0 : 1));
+    const msgs = iss.map((it) => tidyMessage(it.text));
+    if (iss.length) {
+      const f = Object.assign(document.createElement('div'), { className: 'rv-first', textContent: msgs[0] });
+      if (iss.length > 1) f.append(Object.assign(document.createElement('span'), { className: 'rv-more', textContent: `+${iss.length - 1}` }));
+      f.title = msgs.join('\n');
+      main.append(f);
     }
+    row.setAttribute('aria-label', `${n}쪽 열기${msgs.length ? `. ${msgs.join(', ')}` : ''}`);
     const ok = document.createElement('button');
     ok.type = 'button';
     ok.className = `pill sm rv-ok${rec.reviewed ? ' white' : ''}`;
@@ -1601,7 +1624,7 @@ async function renderReview() {
     const open = guard(() => openPageForReview(n));
     row.addEventListener('click', open);
     row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) open(); });
-    row.append(dot, main, ok);
+    row.append(main, ok);
     box.appendChild(row);
   }
 }
