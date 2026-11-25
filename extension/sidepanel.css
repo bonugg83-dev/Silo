@@ -175,14 +175,25 @@ body.review-open { overflow: hidden; }
 .rv-row:hover { background: #202020; }
 .rv-row:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .rv-row.done { opacity: .55; }
-.rv-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 6px; background: #555; }
-.rv-row.t1 .rv-dot { background: #e05555; }
-.rv-row.t2 .rv-dot { background: var(--warn); }
-.rv-main { flex: 1; min-width: 0; }
-.rv-title { font-weight: 600; }
-.rv-main ul { margin: 4px 0 0; padding-left: 16px; font-size: 12.5px; line-height: 1.6; }
-.rv-main li.review { color: var(--err); }
-.rv-main li.warn { color: var(--warn); }
+.rv-row { position: relative; padding-left: 16px; }
+.rv-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 12px 0 0 12px; background: #555; }
+.rv-row.t1::before { background: #e05555; }
+.rv-row.t2::before { background: var(--warn); }
+.rv-main { flex: 1; min-width: 0; align-self: center; }
+.rv-top { display: flex; align-items: baseline; gap: 8px; }
+.rv-pg { font-size: 16px; font-weight: 600; }
+.rv-first { font-size: 12.5px; margin-top: 2px; }
+.rv-row.t1 .rv-first { color: var(--err); }
+.rv-row.t2 .rv-first { color: var(--warn); }
+.rv-more { font-size: 11.5px; color: var(--muted); margin-left: 4px; }
+.rv-sum { background: #181818; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rv-nums { display: flex; gap: 14px; font-size: 13px; color: var(--muted); }
+.rv-nums b { font-size: 18px; margin-right: 3px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.rv-nums .nr b { color: var(--err); }
+.rv-nums .ny b { color: var(--warn); }
+.rv-bar { height: 8px; border-radius: 999px; background: #2a2a2a; overflow: hidden; display: flex; }
+.rv-bar span { display: block; height: 100%; transition: width var(--fast); }
+.rv-bar .bd { background: #7d7d82; } .rv-bar .by { background: var(--warn); } .rv-bar .br { background: #e05555; }
 .rv-ok { flex: none; align-self: center; }
 .rv-empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .card { background: #161616; border-radius: 10px; padding: 10px 12px; }

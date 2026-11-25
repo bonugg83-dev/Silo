@@ -40,3 +40,16 @@ export function sortReview(pages, { desc = false, showAll = false } = {}) {
     .filter((x) => showAll || x.tier < 3)
     .sort((a, b) => (desc ? b.tier - a.tier : a.tier - b.tier) || a.n - b.n);
 }
+
+
+/** 위 요약 막대용: 빨강(꼭 볼 쪽)·노랑(참고)·끝(확인함·문제 없음) 쪽 수 */
+export function reviewCounts(pages) {
+  const c = { red: 0, yellow: 0, done: 0, total: 0 };
+  for (const k of Object.keys(pages || {})) {
+    if (!Number.isFinite(Number(k))) continue;
+    const t = pageTier(pages[k]);
+    c.total++;
+    if (t === 1) c.red++; else if (t === 2) c.yellow++; else c.done++;
+  }
+  return c;
+}

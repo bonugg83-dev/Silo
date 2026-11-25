@@ -7,7 +7,7 @@ import { alignHeadings, parseToc, coreTitle } from '../extension/lib/headings.js
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from '../extension/lib/omission.js';
 import { parseVisualBlocks, buildEditorData } from '../extension/lib/visuals.js';
 import { applyRules } from '../extension/lib/rules.js';
-import { tidyMessage, sortReview } from '../extension/lib/issues.js';
+import { tidyMessage, sortReview, reviewCounts } from '../extension/lib/issues.js';
 
 const rules = (t) => applyRules(t).text;
 
@@ -186,4 +186,9 @@ test('검수 목록: 확인한 빨간 쪽은 뒤로, 문제 없는 쪽은 기본
   assert.deepEqual(sortReview(pages).map((x) => x.n), [9, 3]);
   assert.deepEqual(sortReview(pages, { showAll: true }).map((x) => x.n), [9, 3, 5, 12]);
   assert.deepEqual(sortReview(pages, { showAll: true, desc: true }).map((x) => x.n), [5, 12, 3, 9]);
+});
+
+test('검수 요약: 빨강·노랑·끝 쪽 수', () => {
+  const pages = { 1: { issues: [{ cls: 'review' }] }, 2: { issues: [{ cls: 'warn' }] }, 3: { issues: [{ cls: 'review' }], reviewed: true }, 4: {}, links: [] };
+  assert.deepEqual(reviewCounts(pages), { red: 1, yellow: 1, done: 2, total: 4 });
 });
