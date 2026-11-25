@@ -82,19 +82,45 @@
       <span>설정</span>
       <button type="button" id="btnCloseSettings" class="icon" aria-label="작업으로 돌아가기"><svg viewBox="0 0 24 24"><path d="M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z"/></svg></button>
     </div>
-    <span class="lbl">API 키</span>
-    <div id="keyList" class="keys" role="radiogroup" aria-label="API 키"></div>
-    <div class="r"><button type="button" id="btnAddKey" class="pill">키 추가</button></div>
-    <div id="addKeyBox" class="adv"><div class="adv-in">
-      <input type="text" id="newKeyName" placeholder="이름 (예: A키)">
-      <input type="password" id="newKeyValue" placeholder="sk-ant-..." autocomplete="off">
+    <span class="lbl">내 계정</span>
+    <div class="me">
+      <span id="meAvatar" class="avatar" aria-hidden="true"></span>
+      <span class="me-txt"><span id="meName" class="me-name"></span><span id="meSub" class="note"></span></span>
+      <button type="button" id="btnLogout" class="pill sm">로그아웃</button>
+    </div>
+    <div class="key-card">
+      <span class="dot-ok" aria-hidden="true"></span>
+      <span id="meKey" class="mono"></span>
+      <button type="button" id="btnChangeKey" class="pill sm">키 바꾸기</button>
+    </div>
+    <div id="changeKeyBox" class="adv"><div class="adv-in">
+      <input type="password" id="newKeyValue" placeholder="새 키 sk-ant-..." autocomplete="off" aria-label="새 API 키">
+      <input type="password" id="changeKeyPw" placeholder="지금 비밀번호" autocomplete="current-password" aria-label="지금 비밀번호">
       <div class="r"><button type="button" id="btnSaveKey" class="pill">저장</button></div>
+    </div></div>
+
+    <span class="lbl">쓴 비용</span>
+    <div class="cost-grid">
+      <div class="cost-cell"><span class="note">오늘</span><b id="costToday">$0.00</b><span id="costTodayWon" class="note"></span></div>
+      <div class="cost-cell"><span class="note">이번 달</span><b id="costMonth">$0.00</b><span id="costMonthWon" class="note"></span></div>
+    </div>
+    <div id="limitBar" class="limit hidden"><span id="limitFill"></span></div>
+    <label class="opt">이번 달 한도 ($, 0은 없음)<input type="number" id="monthlyLimit" class="num" min="0" step="5"></label>
+    <div id="todayCost" class="note"></div>
+
+    <span class="lbl">로그인</span>
+    <label class="opt">안 쓰면 자동 로그아웃<select id="lockAfter" class="sm"></select></label>
+    <div class="r"><button type="button" id="btnChangePw" class="pill sm">비밀번호 바꾸기</button></div>
+    <div id="changePwBox" class="adv"><div class="adv-in">
+      <input type="password" id="oldPw" placeholder="지금 비밀번호" autocomplete="current-password" aria-label="지금 비밀번호">
+      <input type="password" id="newPw" placeholder="새 비밀번호" autocomplete="new-password" aria-label="새 비밀번호">
+      <input type="password" id="newPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
+      <div class="r"><button type="button" id="btnSavePw" class="pill">저장</button></div>
     </div></div>
     <div id="settingsMsg" class="note"></div>
 
     <span class="lbl">AI 모델</span>
     <select id="model"></select>
-    <div id="todayCost" class="note"></div>
 
     <div class="r sb">
       <button type="button" id="btnPractice2" class="pill">연습 페이지</button>
@@ -117,7 +143,44 @@
         <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
       </div>
       <div class="r"><button type="button" id="btnSaveAdvanced" class="pill">저장</button><span id="advancedMsg" class="note"></span></div>
+      <div class="r"><button type="button" id="btnDeleteProfile" class="pill sm danger">이 계정 지우기</button></div>
     </div></div>
+  </section>
+
+  <!-- 로그인 · 회원가입: 로그인해야 앱을 쓸 수 있음 -->
+  <section id="gate" class="gate scroll" aria-label="로그인">
+    <div class="auth-card">
+      <span class="brand auth-brand" role="img" aria-label="Silo">S<span class="g">ı<span class="brand-dot" aria-hidden="true">i</span></span>lo</span>
+
+      <form id="gateLogin" class="stack" autocomplete="on">
+        <div class="gate-title"><h1>다시 오셨네요</h1><p class="note">아이디와 비밀번호로 로그인해 주세요.</p></div>
+        <label class="fld">아이디<input type="text" id="loginId" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+        <label class="fld">비밀번호<input type="password" id="loginPw" autocomplete="current-password"></label>
+        <button type="submit" id="btnLogin" class="pill white block">로그인</button>
+        <p class="note swap">계정이 없나요? <button type="button" id="toSignup" class="link">회원가입</button></p>
+        <button type="button" id="btnForgot" class="link note center">비밀번호를 잊었어요</button>
+        <div id="forgotBox" class="adv"><div class="adv-in">
+          <p class="note">비밀번호를 찾는 방법은 없어요. 아이디와 API 키를 다시 넣고 새 비밀번호를 정하면, 책 진행과 비용 기록은 그대로 이어져요.</p>
+          <input type="password" id="resetKey" placeholder="sk-ant-..." autocomplete="off" aria-label="API 키">
+          <input type="password" id="resetPw" placeholder="새 비밀번호" autocomplete="new-password" aria-label="새 비밀번호">
+          <input type="password" id="resetPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
+          <div class="r"><button type="button" id="btnReset" class="pill">새 비밀번호로 로그인</button></div>
+        </div></div>
+      </form>
+
+      <form id="gateSignup" class="stack hidden" autocomplete="off">
+        <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">이 컴퓨터에 계정을 만들어요. API 키는 비밀번호로 잠가 저장해요.</p></div>
+        <label class="fld">아이디<input type="text" id="newName" maxlength="20" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="영문, 숫자, 한글 2~20자"></label>
+        <label class="fld">비밀번호<input type="password" id="newPw1" autocomplete="new-password" placeholder="4자 이상"></label>
+        <label class="fld">비밀번호 확인<input type="password" id="newPw1b" autocomplete="new-password"></label>
+        <label class="fld hidden" id="legacyFld">API 키<select id="legacyKey"></select></label>
+        <label class="fld" id="newKeyFld">Claude API 키<input type="password" id="newKey" placeholder="sk-ant-..." autocomplete="off"></label>
+        <button type="submit" id="btnSignup" class="pill white block">가입하고 시작하기</button>
+        <p class="note swap">이미 계정이 있나요? <button type="button" id="toLogin" class="link">로그인</button></p>
+      </form>
+
+      <div id="gateMsg" class="note center gate-msg" role="status"></div>
+    </div>
   </section>
 
   <!-- 검수: 아래에서 올라옴 -->

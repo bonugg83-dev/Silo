@@ -140,39 +140,71 @@ await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 
 panel.on('dialog', (d) => d.accept());
 
-// 1. 키가 없으면 설정이 열려 있고, 교정하지 않음
-await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
-await panel.click('#btnCloseSettings');
+// 1. 로그인 전에는 로그인·회원가입 화면만 (계정이 없으면 회원가입부터)
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+assert.ok(await panel.isVisible('#gateSignup'), '계정이 없으면 회원가입');
+assert.ok(!(await panel.isVisible('#gateLogin')));
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
 assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
-await panel.click('#btnAnalyze');
-await panel.waitForSelector('#error:not(.hidden)');
-assert.match(await panel.textContent('#error'), /API 키/);
 
-// 2. 키 여러 개: 이름 붙이기, 고르기, 삭제
+// 2. 회원가입 · 로그아웃 · 다른 계정 · 다시 로그인
+const KEY_A = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
+const KEY_B = 'sk-ant-api03-OTHERKEY_abcdefghijklmnopqrstuvwxyz9999';
+async function signup(id, pw, key) {
+  await panel.fill('#newName', id);
+  await panel.fill('#newPw1', pw);
+  await panel.fill('#newPw1b', pw);
+  await panel.fill('#newKey', key);
+  await panel.click('#btnSignup');
+  await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+}
+await panel.fill('#newName', '교정A');
+await panel.fill('#newPw1', '1234');
+await panel.fill('#newPw1b', '9999');
+await panel.fill('#newKey', KEY_A);
+await panel.click('#btnSignup');
+assert.match(await panel.textContent('#gateMsg'), /달라/);
+await signup('교정A', '1234', KEY_A);
+let all = await panel.evaluate(() => chrome.storage.local.get(null));
+assert.equal(all.profiles.length, 1);
+assert.ok(!JSON.stringify(all).includes('TESTKEY'), '키는 암호화해서만 저장');
+assert.equal(all.activeProfileId, all.profiles[0].id);
+assert.equal(all.lockState.unlocked, true);
+const pidA = all.profiles[0].id;
 await panel.click('#btnOpenSettings');
-assert.ok(await panel.evaluate(() => document.querySelector('#addKeyBox').classList.contains('open')), '키가 없으면 키 추가 칸이 열려 있음');
-await panel.fill('#newKeyName', 'A사용자 키');
-await panel.fill('#newKeyValue', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
-await panel.click('#btnSaveKey');
-await panel.click('#btnAddKey');
-await panel.fill('#newKeyName', 'B사용자 키');
-await panel.fill('#newKeyValue', 'sk-ant-api03-OTHERKEY_abcdefghijklmnopqrstuvwxyz9999');
-await panel.press('#newKeyValue', 'Enter');
-let rows = panel.locator('#keyList .key-row');
-assert.equal(await rows.count(), 2);
-assert.equal(await rows.nth(0).locator('.name').textContent(), 'A사용자 키');
-assert.match(await rows.nth(1).locator('.name').getAttribute('title'), /…9999$/);
-assert.ok(await rows.nth(1).locator('input[type=radio]').isChecked(), '새로 추가한 키를 사용');
-await rows.nth(0).locator('label').click();
-assert.ok(await rows.nth(0).locator('input[type=radio]').isChecked());
-await rows.nth(1).locator('button.del').click(); // B 삭제
-await panel.waitForFunction(() => document.querySelectorAll('#keyList .key-row').length === 1);
-assert.equal(await rows.nth(0).locator('.name').textContent(), 'A사용자 키');
-const stored = await panel.evaluate(() => chrome.storage.local.get('settings'));
-assert.equal(stored.settings.keys.length, 1);
-assert.equal(stored.settings.activeKeyId, stored.settings.keys[0].id);
-assert.ok(!('apiKey' in stored.settings));
+await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
+assert.equal(await panel.textContent('#meName'), '교정A');
+assert.equal(await panel.textContent('#meKey'), 'sk-ant-a…1234');
+await panel.click('#btnLogout');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open') && !document.body.classList.contains('settings-open'));
+assert.ok(await panel.isVisible('#gateLogin'), '계정이 있으면 로그인');
+assert.equal(await panel.inputValue('#loginId'), '교정A', '마지막 아이디');
+await panel.click('#toSignup');
+await panel.fill('#newName', '교정a');
+await panel.fill('#newPw1', '5678');
+await panel.fill('#newPw1b', '5678');
+await panel.fill('#newKey', KEY_B);
+await panel.click('#btnSignup');
+assert.match(await panel.textContent('#gateMsg'), /이미 있는/, '아이디는 대소문자 구분 없이 하나');
+await signup('교정B', '5678', KEY_B);
+all = await panel.evaluate(() => chrome.storage.local.get(null));
+assert.equal(all.profiles.length, 2);
+assert.ok(!JSON.stringify(all).includes('OTHERKEY'));
+await panel.click('#btnOpenSettings');
+assert.equal(await panel.textContent('#meName'), '교정B');
+await panel.click('#btnLogout');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.fill('#loginId', '교정A');
+await panel.fill('#loginPw', '0000');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => /맞지 않아요/.test(document.querySelector('#gateMsg').textContent));
+await panel.fill('#loginPw', '1234');
+await panel.press('#loginPw', 'Enter');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+const sess = await panel.evaluate(() => chrome.storage.session.get('unlock'));
+assert.equal(sess.unlock.pid, pidA);
+await panel.click('#btnOpenSettings');
+await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
 assert.equal(await panel.locator('#btnClearBook').count(), 0, '이 책 기록 지우기 없음');
 await panel.click('#btnCloseSettings');
 // 자동모드를 끄면 이 쪽만 교정
@@ -198,7 +230,7 @@ const out = await panel.inputValue('#output');
 console.log('--- 151쪽 결과 ---\n' + out);
 assert.equal(apiCalls.length, 2, '1차 작성 + 2차 검증(고칠 곳만)');
 const c1 = apiCalls[0];
-assert.equal(c1.headers['x-api-key'], 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234', '고른 키 사용');
+assert.equal(c1.headers['x-api-key'], KEY_A, '로그인한 계정의 키 사용');
 assert.equal(c1.body.model, 'claude-opus-5-5');
 assert.equal(c1.body.output_config.effort, 'high');
 assert.equal(c1.body.output_config.format.type, 'json_schema');
@@ -279,7 +311,15 @@ assert.equal(await panel.inputValue('#paceMaxSec'), '90');
 await panel.fill('#paceMinSec', '8');
 await panel.fill('#paceMaxSec', '9');
 await panel.click('#btnSaveAdvanced');
-assert.match(await panel.textContent('#todayCost'), /오늘 쓴 비용 약 \$/);
+assert.match(await panel.textContent('#costToday'), /^\$0\.\d\d$/);
+assert.match(await panel.textContent('#todayCost'), /오늘 2쪽, 쪽당 약/);
+const costKeys = Object.keys(await panel.evaluate(() => chrome.storage.local.get(null))).filter((k) => k.startsWith('cost'));
+assert.ok(costKeys.length === 3 && costKeys.every((k) => k.includes(`:${pidA}:`)), '비용은 계정별');
+const bookKeys = Object.keys(await panel.evaluate(() => chrome.storage.local.get(null))).filter((k) => k.startsWith('book:'));
+assert.ok(bookKeys.includes(`book:${pidA}:23584`) && bookKeys.every((k) => /^book:[0-9a-f-]{36}:23584$/.test(k)), '책 기록도 계정별');
+const bookA = (await panel.evaluate((k) => chrome.storage.local.get(k), `book:${pidA}:23584`))[`book:${pidA}:23584`];
+const bookB = (await panel.evaluate((k) => chrome.storage.local.get(k), bookKeys.find((k) => !k.includes(pidA))))[bookKeys.find((k) => !k.includes(pidA))] || { pages: {} };
+assert.ok(Object.keys(bookA.pages).length >= 1 && Object.keys(bookB.pages).length === 0, '다른 계정의 진행은 섞이지 않음');
 await panel.click('#btnCloseSettings');
 await panel.click('#btnAuto'); // 자동모드 켬 (켜기만으로는 시작하지 않음)
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true');
