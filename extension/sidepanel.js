@@ -8,7 +8,10 @@ import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
 } from './lib/page.js';
 import { findLinks, putNoteAtMarker, removeNoteLine } from './lib/footnotes.js';
-import { editorHtmlToText, downscaleImage } from './lib/convert.js';
+import { editorHtmlToText, downscaleImage, imageSize } from './lib/convert.js';
+import { alignHeadings } from './lib/headings.js';
+import { findOmissions, tooShort, suspiciousSpecial } from './lib/omission.js';
+import { tidyMessage, sortReview } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
 import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
@@ -25,6 +28,8 @@ const DEFAULT_SETTINGS = {
   model: 'claude-opus-5-5',
   effort: 'high',
   verify: true,
+  verifyFull: true, // 2차 검증 때 원본 전체를 다시 훑어 누락·형식까지
+  zoom: true, // 원본 2576px + 위·아래 반쪽 확대본
   useToc: true,
   imageMax: 2000,
   dashSpacing: 'attach',
@@ -147,7 +152,7 @@ async function addKey() {
 }
 
 const ADV_FIELDS = {
-  verify: 'checked', dashSpacing: 'value', autoVisuals: 'checked', pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
+  verify: 'checked', verifyFull: 'checked', zoom: 'checked', dashSpacing: 'value', autoVisuals: 'checked', pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
 };
 function fillForms() {
   const sel = $('model');
@@ -392,7 +397,8 @@ function showTocState(book) {
 
 // ---------- 목차 ----------
 async function ensureToc(tab, info, book, signal) {
-  if (!settings.useToc || book.toc || book.tocError) return; // 실패했으면 “다시 읽기” 전까지 다시 시도하지 않음
+  // 실패하면 한 번 더 시도하고, 그래도 안 되면 “다시 읽기” 전까지 두지 않음
+  if (!settings.useToc || book.toc || (book.tocError && (book.tocTries || 0) >= 2)) return;
   status('목차 이미지를 가져오는 중 (책마다 처음 한 번)');
   try {
     const toc = await runInPage(tab.id, pageFetchToc, [info.bookIdx]);
@@ -412,9 +418,11 @@ async function ensureToc(tab, info, book, signal) {
     book.tocNotes = rt.result.notes || '';
     book.tocVersion = TOC_VERSION;
     book.tocError = '';
+    book.tocTries = 0;
   } catch (e) {
     if (e.name === 'AbortError') throw e;
     book.tocError = e.message || String(e);
+    book.tocTries = (book.tocTries || 0) + 1;
   }
   await putBook(info.bookIdx, book);
   showTocState(book);
@@ -423,7 +431,7 @@ async function ensureToc(tab, info, book, signal) {
 // ---------- 교정 ----------
 async function analyze() {
   setError('');
-  if (!$('reviewBox').classList.contains('hidden')) await showReview(false);
+  if (reviewOpen()) await showReview(false);
   const tab = await getEditorTab();
   if (!activeKey()) throw new Error('API 키가 없어요. 설정(☰)에서 Claude API 키를 추가해 주세요.');
   abort = new AbortController();
@@ -440,7 +448,8 @@ async function analyze() {
   const img = await runInPage(tab.id, pageFetchImage, [info.imgSrc]);
   if (!img?.ok) throw new Error('원본 이미지를 가져오지 못했어요: ' + (img?.error || ''));
   stepper.reach('enhance');
-  const sent = await downscaleImage(img.dataUrl, settings.imageMax);
+  const sent = await downscaleImage(img.dataUrl, settings.zoom ? 2576 : 2000);
+  const zoomImgs = settings.zoom ? await zoomHalves(img.dataUrl).catch(() => []) : [];
 
   const book = await getBook(info.bookIdx);
   await ensureToc(tab, info, book, abort.signal);
@@ -464,16 +473,17 @@ async function analyze() {
     pendingFootnotes,
     imageWidth: sent.width,
     imageHeight: sent.height,
+    zoomed: zoomImgs.length > 0,
   };
   const call = (extra) => callClaude({
-    apiKey: activeKey(), model: settings.model, effort: settings.effort,
-    imageDataUrl: sent.dataUrl, signal: abort.signal, ...extra,
+    apiKey: activeKey(), model: settings.model, effort: settings.effort, signal: abort.signal, ...extra,
   });
 
   let cost = 0;
   stepper.reach('send');
   stepper.timed = true;
-  const r1 = await call({ userText: buildWriteMessage(ctx) });
+  // 2차 검증을 같은 대화에 이어 보내므로 1차 질문(이미지 포함)을 캐시해 둔다
+  const r1 = await call({ images: [sent.dataUrl, ...zoomImgs], userText: buildWriteMessage(ctx), cacheUser: !!settings.verify });
   stepper.timed = false;
   stepper.reach('foot');
   cost += estimateCostUsd(settings.model, r1.usage);
@@ -481,28 +491,54 @@ async function analyze() {
   const ruleOpts = { dashSpacing: settings.dashSpacing, unitSymbols: settings.unitSymbols, allowBlankLines: !!result.has_poem_or_quote };
   let checked = applyRules(result.text, ruleOpts);
   const extraFlags = [];
-  let verifyNote = '';
+  const noteLines = [];
+  const skipOmission = ['toc', 'index_ad'].includes(result.page_kind);
 
   stepper.skipStep('verify');
   if (settings.verify) {
     const diffs = disagreements(ocrText, checked.text);
-    if (diffs.length) {
-      stepper.reach('verify', `OCR과 다른 ${diffs.length}곳 다시 확인하는 중`);
-      const r2 = await call({ userText: buildVerifyMessage(ctx, checked.text, diffs), schema: VERIFY_SCHEMA });
+    const omitted = skipOmission ? [] : findOmissions(ocrText, checked.text);
+    if (settings.verifyFull || diffs.length || omitted.length) {
+      stepper.reach('verify', settings.verifyFull ? '원본과 한 줄씩 다시 대조하는 중' : `OCR과 다른 ${diffs.length + omitted.length}곳 다시 확인하는 중`);
+      const r2 = await call({
+        prior: r1.turn, images: [], schema: VERIFY_SCHEMA,
+        userText: buildVerifyMessage(ctx, checked.text, diffs, omitted, { full: settings.verifyFull }),
+      });
       cost += estimateCostUsd(settings.model, r2.usage);
       const fx = applyFixes(checked.text, r2.result.fixes);
       for (const f of fx.failed) {
-        extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: f.fix.find,
+        extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
           message: `2차 검증 수정 못 함: “${f.fix.find}” → “${f.fix.replace}”` });
       }
       for (const f of r2.result.flags || []) extraFlags.push(f);
-      verifyNote = fx.applied.length
+      noteLines.push(fx.applied.length
         ? `2차 검증에서 ${fx.applied.length}곳 고침:\n${fx.applied.map((f) => `· ${f.find} → ${f.replace} (${f.reason})`).join('\n')}`
-        : '2차 검증: 고칠 곳 없음';
+        : '2차 검증: 고칠 곳 없음');
       checked = applyRules(fx.text, ruleOpts);
     } else {
-      verifyNote = '2차 검증: OCR과 다른 곳이 없어 건너뜀';
+      noteLines.push('2차 검증: OCR과 다른 곳이 없어 건너뜀');
     }
+  }
+
+  // 제목 단계는 목차에 있는 제목이면 목차대로
+  if (book.toc && result.page_kind !== 'toc') {
+    const al = alignHeadings(checked.text, book.toc);
+    if (al.changes.length) {
+      checked = { ...checked, text: al.text };
+      noteLines.push(`목차에 맞춰 제목 단계 ${al.changes.length}곳 고침: ${al.changes.map((c) => `${c.from || '(없음)'}→${c.to} ${c.line}`).join(', ')}`);
+    }
+  }
+
+  // 누락 경보 (프로그램 검사)
+  if (!skipOmission) {
+    for (const o of findOmissions(ocrText, checked.text)) {
+      extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
+        message: `빠졌을 수 있음: “${o.length > 40 ? `${o.slice(0, 40)}…` : o}”` });
+    }
+    if (tooShort(ocrText, checked.text)) extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: 'OCR보다 글이 많이 짧음' });
+  }
+  if (suspiciousSpecial(ocrText, result.page_kind)) {
+    extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: `${PAGE_KIND[result.page_kind]}로 처리했는데 OCR 글자가 많음` });
   }
   stepper.reach('check');
   addCost(cost);
@@ -512,11 +548,11 @@ async function analyze() {
   const footOrphans = (result.notes_without_marker || []).filter((f) => f.label);
   for (const l of footMissing) {
     extraFlags.push({ kind: 'footnote', needs_review: true, quote: `[${l}]`,
-      message: `${l} 설명이 이 쪽에 없음 (다음 쪽에 있으면 검수에서 연결)` });
+      message: `${l} 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)` });
   }
   for (const o of footOrphans) {
     extraFlags.push({ kind: 'footnote', needs_review: true, quote: `[${o.label}:`,
-      message: `앞쪽 ${o.label}의 설명 (검수에서 앞쪽으로 옮김)` });
+      message: `앞쪽 ${o.label}의 설명 (자동 모드 끝에 앞쪽으로 옮김)` });
   }
 
   // 시각자료
@@ -526,7 +562,8 @@ async function analyze() {
   current = {
     tabId: tab.id, info, ocrText, result, cost, sentImage: sent,
     text: checked.text, ruleChanges: checked.changes, ruleWarnings: checked.warnings,
-    flags: [...(result.flags || []), ...extraFlags], notes: [result.notes, verifyNote].filter(Boolean).join('\n'),
+    flags: [...(result.flags || []), ...extraFlags].map(sortFlag).filter(Boolean),
+    notes: [result.notes, ...noteLines].filter(Boolean).join('\n'),
     visuals, book, footMissing, footOrphans,
   };
   current.page = decidePageNumber(info, result, book);
@@ -576,6 +613,31 @@ async function prepareVisuals(tab, info, text, aiVisuals, sent) {
 }
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 
+/** 원본이 크면 위·아래 반쪽(조금 겹침) 확대본을 만든다. 작은 글씨·각주 번호·낫표 획 확인용 */
+async function zoomHalves(dataUrl) {
+  const { width, height } = await imageSize(dataUrl);
+  if (Math.max(width, height) < 1800) return [];
+  const out = [];
+  for (const box of [{ x: 0, y: 0, w: 1, h: 0.55 }, { x: 0, y: 0.45, w: 1, h: 0.55 }]) {
+    const c = await cropImage(dataUrl, box, { pad: 0, trim: false });
+    out.push((await downscaleImage(c.dataUrl, 2576)).dataUrl);
+  }
+  return out;
+}
+
+/**
+ * 검수에 올릴 표시만 남긴다.
+ * 제목 단계·시각자료(표 제외) 판단은 검수하지 않고, 추측성 [기타]는 노랑으로.
+ */
+function sortFlag(f) {
+  if (!f || !f.message) return null;
+  if (f.kind === 'heading') return null;
+  if (f.kind === 'visual' && !/표/.test(f.message)) return null;
+  const out = { ...f, message: tidyMessage(f.message) };
+  if (f.kind === 'other' && !/짧음|OCR 글자가 많음/.test(f.message)) out.needs_review = false;
+  return out;
+}
+
 function decidePageNumber(info, result, book) {
   const printed = String(result.page_number || '').trim();
   const prevNum = Number(book.pages[info.currPage - 1]?.pageNumber);
@@ -586,7 +648,9 @@ function decidePageNumber(info, result, book) {
   if (printed) return { value: info.pageField || '', none: false, note: `쪽 번호가 숫자가 아님(“${printed}”)`, guessed: true };
   // 인쇄된 번호가 없으면 앞쪽 번호로 추정 (페이지번호 없음은 체크하지 않음)
   const guess = Number.isFinite(prevNum) && prevNum > 0 ? String(prevNum + 1) : (info.pageField || String(info.currPage));
-  return { value: guess, none: false, note: `쪽 번호 추정 (${guess})`, guessed: true };
+  // 앞쪽 번호+1과 사이트 쪽 번호 칸이 같으면 맞는 것으로 본다 (장 표지 등 번호 없는 쪽)
+  if (info.pageField && guess === info.pageField) return { value: guess, none: false, note: '', guessed: false };
+  return { value: guess, none: false, note: `쪽 번호 추정 (${guess})`, guessed: true, soft: true };
 }
 
 // ---------- 화면 그리기 ----------
@@ -601,12 +665,9 @@ function allIssues() {
     c.visuals.forEach((v, i) => { if (v.include && v.error) items.push({ cls: 'review', text: `[그림 ${i + 1}] ${v.error}`, quote: '' }); });
     return items;
   }
-  if (c.page.note) items.push({ cls: 'review', text: c.page.note, quote: '' });
-  if (PAGE_KIND[c.result.page_kind]) {
-    items.push({ cls: 'review', text: `[특수한 쪽] ${PAGE_KIND[c.result.page_kind]}`, quote: '' });
-  }
+  if (c.page.note) items.push({ cls: c.page.soft ? 'warn' : 'review', text: c.page.note, quote: '' });
   for (const f of c.flags) items.push({ cls: f.needs_review ? 'review' : 'warn', text: `${KIND_LABEL[f.kind] || '[확인]'} ${f.message}`, quote: f.quote || '' });
-  for (const w of c.ruleWarnings) items.push({ cls: 'warn', text: `[규칙] ${w.message}`, quote: w.quote || '' });
+  for (const w of c.ruleWarnings) items.push({ cls: 'warn', text: `[규칙] ${tidyMessage(w.message)}`, quote: w.quote || '' });
   c.visuals.forEach((v, i) => { if (v.include && v.error) items.push({ cls: 'review', text: `[그림 ${i + 1}] ${v.error}`, quote: '' }); });
   return items;
 }
@@ -979,6 +1040,21 @@ async function waitPace(openedAt, targetSec) {
 async function autoLoop() {
   autoRunning = true;
   await showReview(false);
+  // 시작 전에 목차부터 (없으면 제목 단계가 틀리기 쉬움)
+  const st0 = await refreshStatus();
+  if (!st0) throw new Error(lastStatusError || '편집 화면을 찾지 못했어요.');
+  if (!activeKey()) throw new Error('API 키가 없어요. 설정(☰)에서 Claude API 키를 추가해 주세요.');
+  if (settings.useToc) {
+    abort = new AbortController();
+    const book0 = await getBook(st0.info.bookIdx);
+    if (!book0.toc) {
+      setProgress('목차를 읽는 중…');
+      await ensureToc(st0.tab, st0.info, book0, abort.signal);
+      if (!book0.toc) await ensureToc(st0.tab, st0.info, book0, abort.signal); // 한 번 더
+      setProgress('');
+      if (!book0.toc && !confirm(`목차를 읽지 못했어요(${book0.tocError || '이유 모름'}).\n목차 없이 계속할까요? 제목 단계가 틀릴 수 있어요.`)) return;
+    }
+  }
   while (autoRunning) {
     const openedAt = Date.now();
     const paceSec = pickPaceSec();
@@ -996,8 +1072,8 @@ async function autoLoop() {
     const r = await save('next', { reviewed: false });
     resetBox();
     if (!r.moved) {
-      setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요.`);
-      await showReview(true);
+      const linked = await linkFootnotes(r.info.bookIdx);
+      setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요.${linked}`);
       break;
     }
   }
@@ -1028,6 +1104,7 @@ async function startRun() {
   setError('');
   setProgress('');
   $('btnAnalyze').classList.add('on');
+  $('btnReview').classList.add('hidden');
   setBusy(false);
   try {
     if (autoOn()) await autoLoop();
@@ -1162,6 +1239,7 @@ async function rebuildToc() {
   book.toc = null;
   book.tocNotes = '';
   book.tocError = '';
+  book.tocTries = 0;
   await putBook(info.bookIdx, book);
   $('tocText').value = '';
   showTocState(book);
@@ -1175,39 +1253,31 @@ async function rebuildToc() {
 $('btnRebuildToc').addEventListener('click', guard(rebuildToc));
 $('btnTocRetry').addEventListener('click', guard(rebuildToc));
 
-// ---------- 검수 (끝까지 한 뒤 한 번에 확인) ----------
+// ---------- 검수 (아래에서 올라오는 창) ----------
 let reviewShowAll = false;
-function reviewItems(book) {
-  return Object.keys(book.pages).map(Number).sort((a, b) => a - b)
-    .map((n) => ({ n, rec: book.pages[n] }))
-    .filter(({ rec }) => (rec.issues || []).length);
-}
+let reviewDesc = false;
+const reviewOpen = () => document.body.classList.contains('review-open');
 function updateReviewBadge(book) {
-  const left = reviewItems(book).filter(({ rec }) => !rec.reviewed).length
-    + (book.links || []).filter((l) => !l.done).length;
+  const left = sortReview(book.pages).length + (book.links || []).filter((l) => !l.done).length;
   $('reviewBadge').textContent = String(left);
-  $('btnReview').classList.toggle('hidden', !left && $('reviewBox').classList.contains('hidden'));
+  $('reviewBadge').classList.toggle('hidden', !left);
+  // 교정이 끝난 뒤, 이 책에 처리한 쪽이 있으면 긴 검수 버튼을 보여 준다
+  $('btnReview').classList.toggle('hidden', running || !Object.keys(book.pages || {}).length);
 }
 
 async function renderReview() {
-  let tab;
   let info;
   try {
-    tab = await getEditorTab();
+    const tab = await getEditorTab();
     info = await runInPage(tab.id, pageRead);
   } catch (e) {
-    $('reviewSummary').textContent = e.message;
+    $('reviewPages').innerHTML = '';
+    $('reviewPages').append(Object.assign(document.createElement('div'), { className: 'note', textContent: e.message }));
     return;
   }
   const book = await getBook(info.bookIdx);
   updateReviewBadge(book);
-  const items = reviewItems(book);
-  const todo = items.filter(({ rec }) => !rec.reviewed);
   const links = (book.links || []).filter((l) => !l.done);
-  const doneCount = Object.keys(book.pages).length;
-  $('reviewSummary').textContent = todo.length || links.length
-    ? `${doneCount}쪽 중 확인할 쪽 ${todo.length}개${links.length ? `, 옮길 각주 ${links.length}개` : ''}`
-    : `${doneCount}쪽 모두 확인했어요. 제출하기는 직접 눌러 주세요.`;
 
   $('reviewLinksBox').classList.toggle('hidden', !links.length);
   const lb = $('reviewLinks');
@@ -1237,38 +1307,54 @@ async function renderReview() {
 
   const box = $('reviewPages');
   box.innerHTML = '';
-  for (const { n, rec } of (reviewShowAll ? items : todo)) {
-    const card = document.createElement('div');
-    card.className = `rv-page${rec.reviewed ? ' done' : ''}`;
-    const h = document.createElement('h3');
-    h.textContent = `${n}쪽${rec.pageNumber ? ` (쪽 번호 ${rec.pageNumber})` : ''}${rec.reviewed ? ' · 확인함' : ''}`;
-    const ul = document.createElement('ul');
-    for (const it of rec.issues) {
-      const li = document.createElement('li');
-      li.className = it.cls;
-      li.textContent = it.text;
-      ul.appendChild(li);
-    }
+  const list = sortReview(book.pages, { desc: reviewDesc, showAll: reviewShowAll });
+  if (!list.length) {
+    box.append(Object.assign(document.createElement('div'), { className: 'rv-empty', textContent: '확인할 쪽이 없어요' }));
+  }
+  for (const { n, rec, tier } of list) {
     const row = document.createElement('div');
-    row.className = 'r';
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'pill sm primary';
-    open.textContent = '이 쪽 열기';
-    open.addEventListener('click', guard(() => openPageForReview(n)));
+    row.className = `rv-row t${tier}${rec.reviewed ? ' done' : ''}`;
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `${n}쪽 열기`);
+    const dot = document.createElement('span');
+    dot.className = 'rv-dot';
+    const main = document.createElement('div');
+    main.className = 'rv-main';
+    const h = document.createElement('div');
+    h.className = 'rv-title';
+    h.textContent = `${n}쪽`;
+    if (rec.pageNumber) h.append(Object.assign(document.createElement('span'), { className: 'note', textContent: ` · ${rec.pageNumber}` }));
+    main.append(h);
+    if ((rec.issues || []).length) {
+      const ul = document.createElement('ul');
+      // 빨강 먼저
+      for (const it of [...rec.issues].sort((x, y) => (x.cls === 'review' ? 0 : 1) - (y.cls === 'review' ? 0 : 1))) {
+        const li = document.createElement('li');
+        li.className = it.cls;
+        li.textContent = tidyMessage(it.text);
+        ul.appendChild(li);
+      }
+      main.append(ul);
+    }
     const ok = document.createElement('button');
     ok.type = 'button';
-    ok.className = 'pill sm';
-    ok.textContent = rec.reviewed ? '다시 확인할 것으로' : '확인함';
-    ok.addEventListener('click', async () => {
+    ok.className = `pill sm rv-ok${rec.reviewed ? ' white' : ''}`;
+    ok.textContent = rec.reviewed ? '확인됨' : '확인함';
+    ok.setAttribute('aria-pressed', String(!!rec.reviewed));
+    ok.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const b = await getBook(info.bookIdx);
+      if (!b.pages[n]) return;
       b.pages[n].reviewed = !b.pages[n].reviewed;
       await putBook(info.bookIdx, b);
       renderReview();
     });
-    row.append(open, ok);
-    card.append(h, ul, row);
-    box.appendChild(card);
+    const open = guard(() => openPageForReview(n));
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) open(); });
+    row.append(dot, main, ok);
+    box.appendChild(row);
   }
 }
 
@@ -1330,8 +1416,21 @@ async function rewritePage(tab, n, change) {
   return { info, text: r.text };
 }
 
-async function applyLink(link) {
-  if (running) throw new Error('교정이 끝난 뒤에 반영해 주세요.');
+/** 자동 모드 끝: 쪽을 넘는 각주를 모두 이어 붙인다 */
+async function linkFootnotes(bookIdx) {
+  const pending = ((await getBook(bookIdx)).links || []).filter((l) => !l.done);
+  if (!pending.length) return '';
+  let ok = 0;
+  for (const [i, link] of pending.entries()) {
+    showStepLine(`쪽을 넘는 각주 잇는 중 (${i + 1}/${pending.length})`);
+    try { await applyLink(link, { inRun: true }); ok++; } catch { /* 검수 창에 남김 */ }
+  }
+  $('result').dataset.state = 'empty';
+  return ok === pending.length ? ` 쪽을 넘는 각주 ${ok}개도 이었어요.` : ` 각주 ${pending.length - ok}개는 잇지 못했어요(검수에서 반영).`;
+}
+
+async function applyLink(link, { inRun = false } = {}) {
+  if (running && !inRun) throw new Error('교정이 끝난 뒤에 반영해 주세요.');
   const tab = await getEditorTab();
   const info0 = await runInPage(tab.id, pageRead);
   const bookIdx = info0.bookIdx;
@@ -1367,11 +1466,6 @@ async function applyLink(link) {
   }
 }
 
-$('btnReviewShowAll').addEventListener('click', () => {
-  reviewShowAll = !reviewShowAll;
-  $('btnReviewShowAll').textContent = reviewShowAll ? '확인할 쪽만 보기' : '확인한 쪽도 보기';
-  renderReview();
-});
 $('btnApplyAllLinks').addEventListener('click', guard(async () => {
   const tab = await getEditorTab();
   const info = await runInPage(tab.id, pageRead);
@@ -1383,13 +1477,32 @@ $('btnApplyAllLinks').addEventListener('click', guard(async () => {
   await renderReview();
   if (fail) throw new Error(`${fail}개는 반영하지 못했어요. 목록의 빨간 글씨를 보고 직접 고쳐 주세요.`);
 }));
-$('btnReview').addEventListener('click', () => showReview($('reviewBox').classList.contains('hidden')));
+$('btnReview').addEventListener('click', () => showReview(true));
+$('btnSheetBack').addEventListener('click', () => showReview(false));
 async function showReview(on) {
-  $('reviewBox').classList.toggle('hidden', !on);
-  $('workMain').classList.toggle('hidden', on);
-  $('btnReview').setAttribute('aria-pressed', String(on));
+  if (on === reviewOpen()) { if (on) await renderReview(); return; }
+  document.body.classList.toggle('review-open', on);
+  $('sheet').setAttribute('aria-hidden', String(!on));
+  $('sheet').inert = !on;
+  $('work').inert = on;
+  if (!on) setSortMenu(false);
   if (on) await renderReview();
 }
+function setSortMenu(on) {
+  $('sortMenu').classList.toggle('open', on);
+  $('btnSort').setAttribute('aria-expanded', String(on));
+}
+$('btnSort').addEventListener('click', () => setSortMenu(!$('sortMenu').classList.contains('open')));
+document.querySelectorAll('#sortMenu [data-order]').forEach((b) => b.addEventListener('click', () => {
+  reviewDesc = b.dataset.order === 'desc';
+  document.querySelectorAll('#sortMenu [data-order]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderReview();
+}));
+$('btnShowAll').addEventListener('click', () => {
+  reviewShowAll = !reviewShowAll;
+  $('btnShowAll').setAttribute('aria-checked', String(reviewShowAll));
+  renderReview();
+});
 
 /** 검수로 연 쪽을 확인함으로. 고친 게 있으면 넣고 임시저장까지 한다. */
 async function markReviewed() {

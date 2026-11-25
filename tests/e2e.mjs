@@ -110,13 +110,16 @@ await context.route('https://api.anthropic.com/**', async (route) => {
     assert.equal(body.messages[0].content.filter((c) => c.type === 'image').length, 2, '목차 이미지 2장');
     return reply({ toc: '@@[06. 대지와 민중을 사랑한 국민시인 휘트먼 140\n@@{1. 풀잎 145', notes: '' }, { input_tokens: 4000, output_tokens: 500 });
   }
-  const userText = body.messages[0].content.at(-1).text;
+  const userText = body.messages.at(-1).content.at(-1).text;
   const isVerify = /2차 검수/.test(userText);
   const page = isVerify ? lastPage : Number((userText.match(/작업 쪽: (\d+)/) || [])[1]);
   lastPage = page;
   apiCalls.push({ page, call: isVerify ? 2 : 1, body, headers }); if (process.env.DEBUG) console.log(userText.slice(0, 1500));
   if (isVerify) {
     assert.ok(body.output_config.format.schema.properties.fixes, '2차 검증은 고칠 곳만 받는 형식');
+    assert.equal(body.messages.length, 3, '2차 검증은 1차 대화에 이어서');
+    assert.equal(body.messages[1].role, 'assistant');
+    assert.equal(body.messages[2].content.filter((c) => c.type === 'image').length, 0, '이미지는 다시 붙이지 않음(캐시)');
     return reply(verifyFor(page), { input_tokens: 3000, output_tokens: 200 });
   }
   return reply(resultFor(page));
@@ -187,7 +190,7 @@ await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 clearInterval(watch);
 console.log('단계 표시:', [...seen].join(' / '));
 assert.ok([...seen].some((t) => t.startsWith('편집 화면 읽는 중')), '첫 단계');
-assert.ok([...seen].some((t) => /OCR과 다른 \d+곳 다시 확인하는 중/.test(t)), '2차 검증 단계');
+assert.ok([...seen].some((t) => /원본과 한 줄씩 다시 대조하는 중/.test(t)), '2차 검증 단계');
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'));
 assert.ok(await panel.isVisible('#tocAlert'), '목차 실패 알림');
 assert.equal(tocCalls, 0);
@@ -206,7 +209,9 @@ assert.equal(c1.body.messages[0].content[0].type, 'image');
 assert.match(c1.body.messages[0].content[1].text, /미주는 '주석'으로/); // 제작 Tip
 assert.match(c1.body.messages[0].content[1].text, /남풍의 밤이 여- 큰 별/); // OCR 텍스트
 assert.match(c1.body.messages[0].content[1].text, /가로 800px, 세로 1200px/);
-assert.match(apiCalls[1].body.messages[0].content[1].text, /ocr_vs_draft_differences/);
+assert.ok(c1.body.messages[0].content[1].cache_control, '1차 질문 캐시');
+assert.match(apiCalls[1].body.messages[2].content[0].text, /ocr_vs_draft_differences/);
+assert.match(apiCalls[1].body.messages[2].content[0].text, /누락: 원본 이미지를 위에서 아래로/);
 assert.ok(out.includes('큰 별이여'), '2차 검증 수정 적용');
 assert.ok(out.includes('밤이여―오라 “매력”과'), '줄표/따옴표 교정');
 assert.ok(out.includes('옮김, 『19세기'), '겹낫표 앞 띄우기');
@@ -302,9 +307,9 @@ console.log('--- 153쪽 저장 데이터 ---\n' + s3.content);
 assert.equal(s3.page, 153);
 assert.equal(s3.gubun, 'temp');
 assert.ok(s3.content.includes('<p>[그림] 꽃 그림(Flower)</p><p>@@i</p><figure class="image"><img src="/upload/crop/1.png" style="max-width:500px;"><figcaption>설명 첫 줄<br>설명 둘째 줄</figcaption></figure><p>[그림 끝]</p>'));
-// 검수 목록이 열림 (151쪽: 확인할 것 있음)
-assert.ok(await panel.isVisible('#reviewBox'));
-assert.match(await panel.textContent('#reviewPages'), /151쪽/);
+// 끝나면 긴 검수 버튼만 나타남 (창은 자동으로 열지 않음)
+assert.ok(await panel.isVisible('#btnReview'));
+assert.ok(!(await panel.evaluate(() => document.body.classList.contains('review-open'))));
 
 // 7. 153쪽 다시 교정 → 그림이 본문 @@i 자리에 보이고, 눌러서 영역 고치기
 await panel.click('#btnAuto'); // 이 쪽만
@@ -334,18 +339,43 @@ await panel.click('#btnApply');
 await panel.waitForSelector('#btnApply.full', { timeout: 20000 });
 assert.equal(uploads.length, 2, '새로 자른 그림만 올림');
 
-// 8. 검수: 151쪽 열기 → 확인함 (고친 것 없으면 저장 없이 확인)
+// 8. 검수: 아래에서 올라오는 창. 빨간 쪽 먼저, 줄을 누르면 그 쪽이 열림 → 확인함
 await panel.click('#btnReview');
-await panel.waitForSelector('#reviewBox:not(.hidden)');
+await panel.waitForFunction(() => document.body.classList.contains('review-open'));
+await panel.waitForTimeout(500);
+assert.ok(Math.abs((await panel.locator('#sheet').boundingBox()).y) < 2, '검수 창이 올라옴');
+assert.equal(await panel.locator('#sheet #btnAnalyze, #sheet #btnAuto').count(), 0, '검수 창에는 교정하기·자동모드 없음');
+await panel.waitForFunction(() => document.querySelectorAll('#reviewPages .rv-row').length > 0);
+assert.match(await panel.textContent('#reviewPages .rv-row:first-child .rv-title'), /^151쪽/);
+assert.ok(await panel.evaluate(() => document.querySelector('#reviewPages .rv-row').classList.contains('t1')), '빨간 쪽');
+assert.ok(!/확인이 필요|확인하세요/.test(await panel.textContent('#reviewPages')), '군더더기 문장 없음');
+if (process.env.SHOTV) { await panel.setViewportSize({ width: 420, height: 800 }); await panel.screenshot({ path: process.env.SHOTV }); }
+// 정렬: 확인한 쪽도 보기 → 문제 없는 쪽(3순위)까지
+await panel.click('#btnSort');
+await panel.waitForSelector('#sortMenu.open');
+await panel.click('#btnShowAll');
+await panel.waitForFunction(() => document.querySelectorAll('#reviewPages .rv-row').length === 3);
+assert.deepEqual(await panel.$$eval('#reviewPages .rv-title', (a) => a.map((x) => x.firstChild.textContent)), ['151쪽', '152쪽', '153쪽']);
+await panel.click('#sortMenu [data-order="desc"]');
+await panel.waitForFunction(() => document.querySelector('#reviewPages .rv-row:last-child .rv-title').textContent.startsWith('151쪽'));
+if (process.env.SHOTS) { await panel.screenshot({ path: process.env.SHOTS }); }
+await panel.click('#sortMenu [data-order="asc"]');
+await panel.click('#btnShowAll');
+await panel.click('#btnSort');
 const savesBefore = saves.length;
-await panel.click('#reviewPages .rv-page button.primary');
+await panel.click('#reviewPages .rv-row:first-child .rv-main');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽을 열었어요'), null, { timeout: 30000 });
 assert.match(editor.url(), /book_page=151/);
 assert.ok(await panel.isVisible('#btnReviewed'));
 await panel.click('#btnReviewed');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽 확인함'), null, { timeout: 20000 });
 assert.equal(saves.length, savesBefore, '고친 게 없으면 저장하지 않음');
-assert.match(await panel.textContent('#reviewSummary'), /모두 확인했어요/);
+await panel.waitForFunction(() => document.body.classList.contains('review-open'));
+await panel.waitForSelector('#reviewPages .rv-empty');
+// 돌아가기 → 창이 내려감
+await panel.click('#btnSheetBack');
+await panel.waitForFunction(() => !document.body.classList.contains('review-open'));
+await panel.waitForTimeout(500);
 
 // 9. 자동모드로 시작한 뒤 교정하기를 한 번 더 누르면: 어두워지고, 하던 쪽만 끝내고 멈춤 (다음 쪽으로 안 감)
 await panel.click('#btnAuto');

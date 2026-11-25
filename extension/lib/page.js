@@ -128,17 +128,17 @@ export async function pageFetchToc(bookIdx) {
   try {
     const first = await getPage(1);
     const pages = [first];
-    const last = Math.min(first.maxPage, 12);
+    const last = Math.min(first.maxPage, 20);
     for (let n = 2; n <= last; n++) pages.push(await getPage(n));
     const images = [];
     for (const p of pages) {
-      for (const src of p.imgs.slice(0, 2)) {
+      for (const src of p.imgs.slice(0, 4)) {
         const res = await fetch(src, { credentials: 'include' });
         if (res.ok) images.push(await toDataUrl(await res.blob()));
       }
     }
     const text = pages.map((p) => p.text).filter(Boolean).join('\n').slice(0, 20000);
-    return { ok: true, pageCount: pages.length, images: images.slice(0, 12), text };
+    return { ok: true, pageCount: pages.length, images: images.slice(0, 20), text };
   } catch (e) {
     return { ok: false, error: e.message };
   }

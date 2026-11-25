@@ -145,14 +145,47 @@ input.tg:checked::after { transform: translateX(20px); background: #121212; }
 #changes { margin: 0; padding-left: 18px; }
 #tocText { width: 100%; min-height: 200px; font-size: 12.5px; resize: vertical; }
 
-/* 검수 */
+/* 검수 버튼 (교정이 끝나면 칩 줄 아래에 길게) */
+.review-bar { width: 100%; padding: 11px 16px; border-radius: 12px; background: #fff; color: #000; font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; justify-content: center; gap: 8px; animation: rise .35s var(--ease-out); transition: transform var(--fast); }
+.review-bar:active { transform: scale(.98); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* 검수 창: 아래에서 올라옴 */
+.sheet { position: fixed; inset: 0; z-index: 6; overflow-y: auto; background: var(--panel); padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  transform: translateY(100%); visibility: hidden; border-radius: 16px 16px 0 0;
+  transition: transform .4s var(--ease-out), box-shadow .4s, visibility 0s linear .4s; }
+body.review-open .sheet { transform: translateY(0); visibility: visible; box-shadow: 0 -10px 24px rgba(0,0,0,.55); transition: transform .4s var(--ease-out), box-shadow .4s; }
+body.review-open { overflow: hidden; }
+.sheet-hd { position: sticky; top: -16px; margin: -16px -16px 0; padding: 16px 16px 10px; background: var(--panel); z-index: 1; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+.sort-wrap { position: relative; }
+#btnSort svg { width: 10px; height: 10px; fill: currentColor; margin-left: 4px; transition: transform var(--fast); vertical-align: middle; }
+#btnSort[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sort-menu { position: absolute; right: 0; top: calc(100% + 8px); background: #1e1e1e; border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 10px;
+  min-width: 190px; box-shadow: 0 8px 20px rgba(0,0,0,.5); opacity: 0; transform: translateY(-4px); pointer-events: none; visibility: hidden;
+  transition: opacity var(--fast), transform var(--fast), visibility 0s linear var(--fast); }
+.sort-menu.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity var(--fast), transform var(--fast); }
+.seg { display: flex; background: var(--btn); border-radius: 8px; padding: 2px; }
+.seg button { flex: 1; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; color: #ccc; transition: background var(--fast), color var(--fast); }
+.seg button[aria-pressed="true"] { background: #fff; color: #000; font-weight: 600; }
+.sort-menu .switch { justify-content: space-between; font-size: 13px; padding: 2px 0; }
+
+.rv-list { display: flex; flex-direction: column; gap: 8px; }
+.rv-row { display: flex; align-items: flex-start; gap: 10px; background: #181818; border-radius: 12px; padding: 10px 12px; cursor: pointer; transition: background var(--fast); }
+.rv-row:hover { background: #202020; }
+.rv-row:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.rv-row.done { opacity: .55; }
+.rv-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 6px; background: #555; }
+.rv-row.t1 .rv-dot { background: #e05555; }
+.rv-row.t2 .rv-dot { background: var(--warn); }
+.rv-main { flex: 1; min-width: 0; }
+.rv-title { font-weight: 600; }
+.rv-main ul { margin: 4px 0 0; padding-left: 16px; font-size: 12.5px; line-height: 1.6; }
+.rv-main li.review { color: var(--err); }
+.rv-main li.warn { color: var(--warn); }
+.rv-ok { flex: none; align-self: center; }
+.rv-empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .card { background: #161616; border-radius: 10px; padding: 10px 12px; }
-#reviewBox { display: flex; flex-direction: column; gap: 10px; }
-.rv-page { background: #161616; border-radius: 10px; padding: 10px 12px; }
-.rv-page.done { opacity: .6; }
-.rv-page ul { margin: 4px 0 8px; padding-left: 18px; font-size: 12.5px; }
-.rv-page li.review { color: var(--err); }
-.rv-page li.warn { color: var(--warn); }
 .rv-link { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .rv-link .err { color: var(--err); }
 
