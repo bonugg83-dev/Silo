@@ -59,23 +59,20 @@ await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await panel.fill('#newKeyName', '연습 키');
 await panel.fill('#newKeyValue', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
 await panel.click('#btnAddKey');
-await panel.click('.tab[data-tab="advanced"]');
+await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '2');
 await panel.click('#btnSaveAdvanced');
 
 // 연습 페이지 열기 (설정 탭 버튼)
-await panel.click('.tab[data-tab="settings"]');
 const [practice] = await Promise.all([context.waitForEvent('page'), panel.click('#btnPractice2')]);
 practice.on('pageerror', (e) => errors.push('practice: ' + e.message));
 await practice.waitForLoadState();
 await practice.waitForFunction(() => document.querySelector('#book_img').complete && document.querySelector('#book_img').naturalWidth > 0);
 assert.equal(await practice.textContent('#pageCount'), '5');
 await panel.click('.tab[data-tab="work"]');
-await panel.waitForFunction(() => document.querySelector('#pageStatus').textContent.includes('작업 쪽 1'), null, { timeout: 20000 });
 
 // 자동 모드(끝까지 진행): 빨간 항목이 있어도 멈추지 않고 마지막 쪽까지 저장
-assert.ok(await panel.isChecked('#runThrough') === false || true);
 await panel.click('#btnAuto');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
 console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
@@ -89,7 +86,7 @@ assert.ok(/^\[각주3: 각주 설명 내용\]\n<p>/.test(saved['2'].content), '2
 assert.match(saved['1'].content, /\[각주3\]\.$/);
 
 // 검수 탭: 각주 연결 1개, 확인할 쪽(1쪽, 2쪽)
-await panel.waitForSelector('#tab-review.active');
+await panel.waitForSelector('#reviewBox:not(.hidden)');
 await panel.waitForFunction(() => document.querySelectorAll('#reviewLinks .rv-link').length === 1);
 assert.match(await panel.textContent('#reviewLinks'), /1쪽 \[각주3\] ← 2쪽/);
 const pagesText = await panel.textContent('#reviewPages');
@@ -107,7 +104,6 @@ saved = (await panel.evaluate(() => chrome.storage.local.get('practice:saved')))
 assert.match(saved['1'].content, /\[각주3: 각주 설명 내용\]\.$/);
 assert.ok(!saved['2'].content.includes('[각주3'), '2쪽 설명 줄 삭제');
 assert.ok(/^<p>\[그림\] 〈미국의 진보\(American Progress\)〉<\/p><p>@@i<\/p><figure class="image"><img src="data:image\/png/.test(saved['2'].content), '그림 유지: ' + saved['2'].content.slice(0, 120));
-await panel.click('.tab[data-tab="review"]');
 await panel.waitForFunction(() => document.querySelector('#reviewLinksBox').classList.contains('hidden'));
 
 // 이 쪽 열기 → 패널에 결과, 넣고 임시저장 → 확인함
@@ -116,13 +112,17 @@ const firstTitle = await panel.textContent('#reviewPages .rv-page h3');
 await panel.click('#reviewPages .rv-page button.primary');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('열었어요'), null, { timeout: 30000 });
 console.log('열기:', firstTitle, '→', await panel.inputValue('#output'));
-await panel.click('#btnApplySave');
+// 고친 뒤 확인함 → 넣고 임시저장까지
+await panel.click('#btnToggleEdit');
+await panel.fill('#output', (await panel.inputValue('#output')) + '\n고친 줄');
+await panel.click('#btnReviewed');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('임시저장했어요'), null, { timeout: 20000 });
-await panel.click('.tab[data-tab="review"]');
+await panel.waitForSelector('#reviewBox:not(.hidden)');
 await panel.waitForFunction((t) => !Array.from(document.querySelectorAll('#reviewPages .rv-page h3')).some((h) => h.textContent === t), firstTitle);
 const pv = context.pages().find((p) => p.url().includes('practice.html'));
 saved = (await panel.evaluate(() => chrome.storage.local.get('practice:saved')))['practice:saved'];
 assert.ok(/<figure class="image"><img src="data:image\/png/.test(saved['2'].content), '다시 저장해도 그림 유지');
+assert.ok(saved['2'].content.endsWith('고친 줄'), '고친 내용 저장');
 
 // 내 원본 넣기 → 6번째 쪽으로 붙음
 await pv.setInputFiles('#customFile', path.join(here, 'fixtures/page.jpg'));

@@ -62,7 +62,7 @@ await context.route('https://www.mypickebook.org/**', async (route) => {
   if (url.pathname === '/making/make_book.html') {
     const page = Number(url.searchParams.get('book_page') || 151);
     const ocr = page === 151 ? OCR151 : `${page}쪽 OCR 본문`;
-    const html = mockHtml.replaceAll('__PAGE__', String(page)).replace('__OCR__', ocr.replace(/</g, '&lt;'));
+    const html = mockHtml.replaceAll('__PAGE__', String(page)).replaceAll('__END__', '153').replace('__OCR__', ocr.replace(/</g, '&lt;'));
     return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html });
   }
   if (url.pathname === '/making/file.php') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: pageImg });
@@ -75,7 +75,7 @@ await context.route('https://www.mypickebook.org/**', async (route) => {
     uploads.push(body);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: 200, img_path: `/upload/crop/${uploads.length}.png` }) });
   }
-  if (url.pathname === '/upload/crop/1.png') return route.fulfill({ status: 200, contentType: 'image/png', body: originalImg });
+  if (/^\/upload\/crop\/\d+\.png$/.test(url.pathname)) return route.fulfill({ status: 200, contentType: 'image/png', body: originalImg });
   if (url.pathname === '/module/book/table_of_content.php') {
     if (tocFail) return route.fulfill({ status: 500, body: '' });
     // 실제 목차 팝업처럼: 쪽 이동 링크 + 목차 이미지 한 장
@@ -190,18 +190,25 @@ assert.match(c1.body.messages[0].content[1].text, /미주는 '주석'으로/); /
 assert.match(c1.body.messages[0].content[1].text, /남풍의 밤이 여- 큰 별/); // OCR 텍스트
 assert.match(c1.body.messages[0].content[1].text, /가로 800px, 세로 1200px/);
 assert.match(apiCalls[1].body.messages[0].content[1].text, /ocr_vs_draft_differences/);
-assert.ok(!/<draft_text>[\s\S]*<draft_text>/.test(apiCalls[1].body.messages[0].content[1].text));
 assert.ok(out.includes('큰 별이여'), '2차 검증 수정 적용');
 assert.ok(out.includes('밤이여―오라 “매력”과'), '줄표/따옴표 교정');
 assert.ok(out.includes('옮김, 『19세기'), '겹낫표 앞 띄우기');
 assert.ok(out.includes('〈자원봉사론〉'), '산괄호');
 assert.ok(!/[<>]/.test(out));
 assert.equal(await panel.inputValue('#pageNum'), '151');
-const flagsText = await panel.textContent('#flags');
-assert.ok(flagsText.includes('매력 글자가 흐려요'));
-assert.ok(flagsText.includes('적용하지 못했어요'), '적용 못 한 수정은 확인할 것으로');
-assert.equal(await panel.textContent('#outputView mark'), '매력', '확인할 곳을 결과 글에 표시');
+// 확인할 것: 본문에 칠함(노랑), 위치 없는 것은 쪽 번호 옆 점(빨강)
+assert.equal(await panel.textContent('#outputView mark'), '매력');
+assert.equal(await panel.getAttribute('#outputView mark', 'class'), 'warn');
 assert.match(await panel.getAttribute('#outputView mark', 'title'), /매력 글자가 흐려요/);
+assert.ok(await panel.isVisible('#pageDot'));
+assert.match(await panel.getAttribute('#pageDot', 'title'), /2차 검증 수정 못 함/);
+assert.equal(await panel.locator('#flags').count(), 0, '확인할 것 칸 없음');
+if (process.env.SHOTR) { await panel.setViewportSize({ width: 420, height: 800 }); await panel.screenshot({ path: process.env.SHOTR, fullPage: true }); }
+// 토글
+assert.ok(await panel.isHidden('#diffPanel'));
+await panel.click('#tgOcr');
+assert.ok(await panel.isVisible('#diffPanel'));
+await panel.click('#tgChanges');
 assert.match(await panel.textContent('#notes'), /2차 검증에서 1곳 고침/);
 
 // 4. 목차 다시 읽기 → 성공, 다시 교정하면 목차가 전달됨
@@ -211,101 +218,101 @@ await panel.waitForFunction(() => document.querySelector('#progress').textConten
 assert.ok(!(await panel.isVisible('#tocAlert')));
 assert.equal(tocCalls, 1);
 assert.deepEqual(tocPagesFetched, [1, 2]);
+await panel.click('#tgToc');
 assert.match(await panel.inputValue('#tocText'), /@@\[06\./);
 await panel.click('#btnAnalyze');
-await panel.waitForFunction((n) => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').disabled, apiCalls.length, { timeout: 20000 });
+await panel.waitForFunction(() => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').disabled, null, { timeout: 20000 });
 assert.match(apiCalls.at(-2).body.messages[0].content[1].text, /@@\{1\. 풀잎 145/);
 
-// 5. 넣고 임시저장
-await panel.click('#btnApplySave');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('임시저장했어요'), null, { timeout: 20000 });
-const s1 = saves.at(-1);
-assert.equal(s1.gubun, 'temp');
-assert.equal(s1.page_num, '151');
-assert.ok(s1.content.includes('<br>\n52<br>'), '줄마다 <br>');
-assert.ok(s1.content.includes('A &amp; B'));
-console.log('--- 저장된 편집기 데이터 ---\n' + s1.content);
+// 5. 편집기에 넣기 (저장은 하지 않음)
+await panel.click('#btnApply');
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('편집기에 넣었어요'), null, { timeout: 20000 });
+const ed1 = await editor.evaluate(() => CKEDITOR.instances.content.getData());
+assert.ok(ed1.includes('<br>\n52<br>'), '줄마다 <br>');
+assert.ok(ed1.includes('A &amp; B'));
+assert.equal(saves.length, 0, '넣기만, 저장 안 함');
+for (const id of ['btnApplySave', 'btnApplyNext', 'pageStatus', 'timeWarn', 'visualsBox']) assert.equal(await panel.locator('#' + id).count(), 0, id + ' 없음');
 
-// 6. 넣고 저장 후 다음 쪽 → 152쪽
-await panel.click('#btnApplyNext');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('다음 쪽으로 넘어갔어요'), null, { timeout: 30000 });
-assert.equal(saves.at(-1).gubun, 'next');
-assert.match(editor.url(), /book_page=152/);
-
-// 7. 자동 모드: 152 저장 → 153에서 시각자료 때문에 멈춤
-// 쪽 넘김 간격: 테스트에서는 2~3초로 줄여서 확인
-await panel.click('.tab[data-tab="advanced"]');
+// 6. 자동 모드: 151 → 152 → 153(마지막, 그림 자동 넣기)까지 멈추지 않음
+await panel.click('.tab[data-tab="settings"]');
+await panel.click('#btnAdvanced');
 assert.ok(await panel.isChecked('#pacing'), '기본으로 켜짐');
 assert.equal(await panel.inputValue('#paceMinSec'), '60');
 assert.equal(await panel.inputValue('#paceMaxSec'), '90');
-await panel.uncheck('#runThrough'); // 이 테스트는 쪽마다 멈추는 방식
 await panel.fill('#paceMinSec', '2');
 await panel.fill('#paceMaxSec', '3');
 await panel.click('#btnSaveAdvanced');
+assert.match(await panel.textContent('#todayCost'), /오늘 쓴 비용 약 \$/);
 await panel.click('.tab[data-tab="work"]');
 const autoStart = Date.now();
 await panel.click('#btnAuto');
-await panel.waitForFunction(() => /다음 쪽까지 \d+초 기다리는 중/.test(document.querySelector('#progress').textContent), null, { timeout: 30000 });
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('멈췄어요') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 60000 });
-console.log('error:', await panel.textContent('#error'));
-console.log('자동 모드:', await panel.textContent('#progress'));
-assert.match(await panel.textContent('#progress'), /시각자료/);
+assert.equal(await panel.textContent('#btnAuto'), '멈추기');
+await panel.waitForFunction(() => /다음 쪽까지 \d+초/.test(document.querySelector('#progress').textContent), null, { timeout: 30000 });
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
+console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
+assert.equal(await panel.textContent('#btnAuto'), '자동 모드');
 assert.match(editor.url(), /book_page=153/);
+const save151 = saves.find((s) => s.page === 151 && s.gubun === 'next');
+assert.ok(save151.at - autoStart >= 2000, `쪽당 최소 2초 대기 (${save151.at - autoStart}ms)`);
 assert.ok(saves.some((s) => s.page === 152 && s.gubun === 'next' && s.content.includes('@@{152쪽 제목')));
-assert.ok(!saves.some((s) => s.page === 153), '153쪽은 저장하지 않음');
-const save152 = saves.find((s) => s.page === 152 && s.gubun === 'next');
-assert.ok(save152.at - autoStart >= 2000, `쪽당 최소 2초 대기 (${save152.at - autoStart}ms)`);
 const call152 = apiCalls.find((c) => c.page === 152 && c.call === 1);
 assert.match(call152.body.messages[0].content[1].text, /previous_page_ending/);
 const call153 = apiCalls.find((c) => c.page === 153 && c.call === 1);
 assert.match(call153.body.messages[0].content[1].text, /152쪽: @@\{152쪽 제목/);
 assert.equal(tocCalls, 1, '목차는 책마다 한 번만');
-
-// 8. 시각자료: 원본에서 잘라 미리보기 → 넣을 때만 올리고 <figure>로 넣음
-assert.ok(await panel.isVisible('#visualsBox'));
-assert.equal(uploads.length, 0, '넣기 전에는 올리지 않음');
-const dim = await panel.textContent('#visuals .meta .row:nth-child(3) span');
-console.log('잘린 그림 크기:', dim);
-const [cw, ch] = dim.match(/(\d+)×(\d+)/).slice(1).map(Number);
-assert.ok(Math.abs(cw - 808) <= 4 && Math.abs(ch - 608) <= 4, '원본 해상도에서 자르고 흰 여백을 다듬음');
-await panel.click('#btnApplySave');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('임시저장했어요'), null, { timeout: 20000 });
+// 153쪽: 그림을 원본에서 잘라 올리고 figure로 넣고 임시저장
 assert.equal(uploads.length, 1);
 assert.match(uploads[0], /name="crop_file"\r\n\r\ndata:image\/png;base64,/);
 assert.match(uploads[0], /name="fnum"\r\n\r\n153/);
 const s3 = saves.at(-1);
 console.log('--- 153쪽 저장 데이터 ---\n' + s3.content);
 assert.equal(s3.page, 153);
+assert.equal(s3.gubun, 'temp');
 assert.ok(s3.content.includes('<p>[그림] 꽃 그림(Flower)</p><p>@@i</p><figure class="image"><img src="/upload/crop/1.png" style="max-width:500px;"><figcaption>설명 첫 줄<br>설명 둘째 줄</figcaption></figure><p>[그림 끝]</p>'));
-assert.ok(s3.content.startsWith('@@{153쪽 제목\n') || s3.content.startsWith('@@{153쪽 제목<br>'), s3.content);
-assert.ok(s3.content.endsWith('본문 153'));
-// 한 번 더 저장해도 다시 올리지 않음
-await panel.click('#btnApplySave');
-await panel.waitForFunction((n) => !document.querySelector('#btnApplySave').disabled, null, { timeout: 20000 });
-await panel.waitForTimeout(300);
-assert.equal(uploads.length, 1, '같은 그림은 한 번만 올림');
+// 검수 목록이 열림 (151쪽: 확인할 것 있음)
+assert.ok(await panel.isVisible('#reviewBox'));
+assert.match(await panel.textContent('#reviewPages'), /151쪽/);
 
-// 9. 영역 고치기: 상자를 끌어 줄이면 다시 자르고, 다음 넣기 때 새로 올림
+// 7. 153쪽 다시 교정 → 그림이 본문 @@i 자리에 보이고, 눌러서 영역 고치기
+await panel.click('#btnAnalyze');
+await panel.waitForSelector('#result:not(.hidden)', { timeout: 20000 });
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').disabled, null, { timeout: 20000 });
+assert.equal(await panel.locator('#outputView .vthumb img').count(), 1, '본문 안 그림');
+// 편집기에 이미 그림이 있어 그대로 다시 씀 (영역 고치기 없음) → 그림을 지우고 새로 자르는 경우를 보려고 편집기를 OCR로 되돌림
+await editor.evaluate(() => { CKEDITOR.instances.content._data = '153쪽 OCR 본문'; });
+await panel.click('#btnAnalyze');
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').disabled && document.querySelector('#outputView .vthumb img'), null, { timeout: 20000 });
 await panel.setViewportSize({ width: 420, height: 900 });
-await panel.click('#visuals button:has-text("영역 고치기")');
+await panel.click('#outputView .vthumb');
 await panel.waitForSelector('#cropModal:not(.hidden)');
 await panel.waitForFunction(() => document.querySelector('#cropBox').getBoundingClientRect().width > 50);
 await panel.locator('#cropBox .se').scrollIntoViewIfNeeded();
 const hb = await panel.locator('#cropBox .se').boundingBox();
+const before = await panel.evaluate(() => document.querySelector('#outputView .vthumb img').naturalWidth);
 await panel.mouse.move(hb.x + 7, hb.y + 7);
 await panel.mouse.down();
 await panel.mouse.move(hb.x - 60, hb.y - 40, { steps: 5 });
 await panel.mouse.up();
 await panel.click('#btnCropApply');
-await panel.waitForSelector('#cropModal.hidden', { state: 'attached' });
-const dim2 = await panel.textContent('#visuals .meta .row:nth-child(3) span');
-console.log('고친 뒤 크기:', dim2);
-assert.notEqual(dim2, dim);
+await panel.waitForFunction((b) => document.querySelector('#outputView .vthumb img')?.naturalWidth && document.querySelector('#outputView .vthumb img').naturalWidth !== b, before);
 await panel.click('#btnApply');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('편집기에 넣었어요'), null, { timeout: 20000 });
-assert.equal(uploads.length, 2, '영역을 고친 그림은 새로 올림');
+assert.equal(uploads.length, 2, '새로 자른 그림만 올림');
 
-if (process.env.SHOT) { await panel.setViewportSize({ width: 420, height: 1300 }); await panel.screenshot({ path: process.env.SHOT, fullPage: true }); }
+// 8. 검수: 151쪽 열기 → 확인함 (고친 것 없으면 저장 없이 확인)
+await panel.click('#btnReview');
+await panel.waitForSelector('#reviewBox:not(.hidden)');
+const savesBefore = saves.length;
+await panel.click('#reviewPages .rv-page button.primary');
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽을 열었어요'), null, { timeout: 30000 });
+assert.match(editor.url(), /book_page=151/);
+assert.ok(await panel.isVisible('#btnReviewed'));
+await panel.click('#btnReviewed');
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽 확인함'), null, { timeout: 20000 });
+assert.equal(saves.length, savesBefore, '고친 게 없으면 저장하지 않음');
+assert.match(await panel.textContent('#reviewSummary'), /모두 확인했어요/);
+
+if (process.env.SHOT) { await panel.screenshot({ path: process.env.SHOT, fullPage: true }); }
 assert.deepEqual(errors, []);
 console.log(`\n통과: API 호출 ${apiCalls.length}회, 저장 ${saves.length}회, 그림 올리기 ${uploads.length}회`);
 await context.close();

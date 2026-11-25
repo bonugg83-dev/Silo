@@ -7,199 +7,111 @@
 </head>
 <body>
   <header>
-    <h1>마이픽 교정 도우미</h1>
     <nav>
       <button class="tab active" data-tab="work">작업</button>
-      <button class="tab" data-tab="review">검수 <span id="reviewBadge" class="badge hidden"></span></button>
       <button class="tab" data-tab="settings">설정</button>
-      <button class="tab" data-tab="advanced">상세 설정</button>
     </nav>
   </header>
 
   <main>
     <!-- 작업 -->
     <section id="tab-work" class="panel active">
-      <div id="pageStatus" class="status muted">편집 화면을 열면 여기 쪽 정보가 보여요.</div>
-      <div id="timeWarn" class="alert hidden"></div>
-      <div id="tocAlert" class="alert hidden"><span id="tocAlertText"></span> <button id="btnTocRetry" class="small-btn">목차 다시 읽기</button></div>
-
-      <div class="row">
-        <button id="btnAnalyze" class="primary">이 쪽 교정하기</button>
-        <button id="btnAuto">자동 모드 시작</button>
+      <div class="row between">
+        <div class="row tight">
+          <button id="btnAnalyze" class="primary">교정하기</button>
+          <button id="btnAuto">자동 모드</button>
+          <button id="btnApply">편집기에 넣기</button>
+        </div>
+        <button id="btnReview" class="hidden">검수 <span id="reviewBadge" class="badge"></span></button>
       </div>
-      <p class="small muted">자동 모드: 확인할 것이 없는 쪽은 넣고 저장한 뒤 다음 쪽으로 넘어가고, 확인할 것이 있는 쪽에서 멈춰요.</p>
+      <div id="tocAlert" class="alert hidden">목차를 읽지 못했어요. <button id="btnTocRetry" class="small-btn">다시 읽기</button></div>
       <div id="progress" class="progress hidden"></div>
       <div id="error" class="alert error hidden"></div>
 
+      <!-- 검수 목록 (검수 버튼으로 펼침) -->
+      <div id="reviewBox" class="hidden">
+        <div id="reviewSummary" class="small"></div>
+        <div id="reviewLinksBox" class="card hidden">
+          <h2>다른 쪽에 걸친 각주</h2>
+          <div id="reviewLinks"></div>
+          <div class="row"><button id="btnApplyAllLinks" class="primary small-btn">모두 반영</button></div>
+        </div>
+        <div id="reviewPages"></div>
+        <div class="row"><button id="btnReviewShowAll" class="small-btn">확인한 쪽도 보기</button></div>
+      </div>
+
       <div id="result" class="hidden">
-        <div class="card">
-          <div class="row between">
-            <label class="inline">쪽 번호 <input type="text" id="pageNum" size="5" inputmode="numeric"></label>
-            <label class="inline"><input type="checkbox" id="nonePage"> 페이지번호 없음</label>
-          </div>
-          <div id="pageNumNote" class="small"></div>
+        <div class="row between pageline">
+          <label class="inline small">쪽 <input type="text" id="pageNum" size="4" inputmode="numeric"></label>
+          <span id="pageDot" class="dot hidden" title=""></span>
+          <input type="checkbox" id="nonePage" class="hidden">
+          <span class="spacer"></span>
+          <button id="btnToggleEdit" class="small-btn">직접 고치기</button>
         </div>
-
-        <div id="flagsBox" class="card">
-          <h2>확인할 것</h2>
-          <ul id="flags"></ul>
-        </div>
-
-        <div class="card">
-          <div class="row between">
-            <h2>작성 결과</h2>
-            <button id="btnToggleEdit" class="small-btn">직접 고치기</button>
-          </div>
-          <p class="small muted" id="viewHint">빨간 곳은 확인이 필요한 위치예요. 마우스를 올리면 이유가 보여요.</p>
-          <div id="outputView" class="output-view"></div>
-          <textarea id="output" class="hidden" spellcheck="false"></textarea>
-          <div id="liveWarn" class="small"></div>
-        </div>
-
-        <div id="visualsBox" class="card hidden">
-          <h2>시각자료 이미지</h2>
-          <p class="small muted">“넣기”를 누를 때 잘린 그림을 사이트에 올리고 @@i 자리에 넣어요. 영역이 틀렸으면 “영역 고치기”로 바로잡으세요.</p>
-          <div id="visuals"></div>
-        </div>
-
-        <div class="card">
-          <div class="row wrap">
-            <button id="btnApply">편집기에 넣기</button>
-            <button id="btnApplySave" class="primary">넣고 임시저장</button>
-            <button id="btnApplyNext">넣고 저장 후 다음 쪽</button>
-          </div>
-        </div>
-
-        <details class="card">
-          <summary>OCR과 달라진 곳</summary>
-          <div id="diff" class="diff"></div>
-        </details>
-
-        <details class="card">
-          <summary>고친 내용</summary>
-          <div id="notes" class="small pre"></div>
-          <ul id="changes" class="small"></ul>
-        </details>
-
-        <div id="cost" class="small muted"></div>
+        <div id="outputView" class="output-view"></div>
+        <textarea id="output" class="hidden" spellcheck="false"></textarea>
+        <div id="liveWarn" class="small"></div>
+        <div class="row"><button id="btnReviewed" class="hidden">확인함</button></div>
       </div>
 
-      <details class="card" id="tocBox">
-        <summary>이 책 목차 (단계 표시)</summary>
-        <p class="small muted">[목차보기] 이미지를 Claude가 읽어 정리한 것이에요. 단계가 틀렸으면 고치고 저장하세요. 쪽마다 제목 단계 판단에 쓰여요.</p>
+      <div class="row tight toggles">
+        <button class="toggle" data-panel="diffPanel" id="tgOcr" disabled>OCR</button>
+        <button class="toggle" data-panel="changesPanel" id="tgChanges" disabled>수정</button>
+        <button class="toggle" data-panel="tocPanel" id="tgToc">목차</button>
+      </div>
+      <div id="diffPanel" class="card hidden"><div id="diff" class="diff"></div></div>
+      <div id="changesPanel" class="card hidden"><div id="notes" class="small pre"></div><ul id="changes" class="small"></ul></div>
+      <div id="tocPanel" class="card hidden">
         <div id="tocStatus" class="small"></div>
-        <textarea id="tocText" spellcheck="false" placeholder="아직 없어요. 첫 쪽을 교정할 때 자동으로 만들어져요."></textarea>
+        <textarea id="tocText" spellcheck="false" placeholder="아직 없어요. 첫 쪽을 교정할 때 만들어져요."></textarea>
         <div id="tocNotes" class="small muted pre"></div>
-        <div class="row"><button id="btnSaveToc">목차 저장</button><button id="btnRebuildToc">목차 다시 읽기</button></div>
-      </details>
-
-      <div class="row footnote"><button id="btnPractice" class="small-btn">연습 페이지 열기</button><span class="small muted">배정 없이 예시 쪽이나 내 원본으로 시험해 볼 수 있어요.</span></div>
-      <p class="small muted">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
-    </section>
-
-    <!-- 검수: 자동 모드로 끝까지 한 뒤 한 번에 확인 -->
-    <section id="tab-review" class="panel">
-      <div id="reviewSummary" class="status"></div>
-      <div id="reviewLinksBox" class="card hidden">
-        <h2>다른 쪽에 걸친 각주</h2>
-        <p class="small muted">앞쪽에는 번호만, 다음 쪽 맨 위에 설명이 있는 각주예요. “반영”을 누르면 앞쪽 번호 자리로 설명을 옮기고 두 쪽을 다시 임시저장해요.</p>
-        <div id="reviewLinks"></div>
-        <div class="row"><button id="btnApplyAllLinks" class="primary">모두 반영</button></div>
+        <div class="row"><button id="btnSaveToc" class="small-btn">목차 저장</button><button id="btnRebuildToc" class="small-btn">다시 읽기</button></div>
       </div>
-      <div id="reviewPages"></div>
-      <div class="row"><button id="btnReviewRefresh" class="small-btn">새로 고침</button><button id="btnReviewShowAll" class="small-btn">확인한 쪽도 보기</button></div>
     </section>
 
-    <!-- 설정: 키와 모델 -->
+    <!-- 설정 -->
     <section id="tab-settings" class="panel">
       <div class="card">
         <h2>Claude API 키</h2>
         <div id="keyList"></div>
         <div class="sub">
-          <h3>키 추가</h3>
           <input type="text" id="newKeyName" placeholder="이름 (예: A사용자 키)">
           <input type="password" id="newKeyValue" placeholder="sk-ant-..." autocomplete="off">
           <div class="row"><button id="btnAddKey" class="primary">키 추가</button></div>
         </div>
-        <p class="small muted">키는 이 컴퓨터의 크롬에만 저장되고 Anthropic API로만 보내져요. 같이 쓰는 컴퓨터라면 작업 후 키를 삭제하세요.</p>
       </div>
       <div class="card">
         <h2>AI 모델</h2>
         <select id="model"></select>
+        <p class="small muted" id="todayCost"></p>
       </div>
-      <div class="card">
-        <h2>연습</h2>
-        <p class="small muted">실제 사이트로는 아무것도 보내지 않는 연습용 편집 화면이에요. Claude 호출은 실제로 해서 비용이 들어요.</p>
+      <div class="row">
         <button id="btnPractice2">연습 페이지 열기</button>
+        <button id="btnAdvanced">상세 설정</button>
       </div>
       <div id="settingsMsg" class="small muted"></div>
-    </section>
 
-    <!-- 상세 설정 -->
-    <section id="tab-advanced" class="panel">
-      <div class="card">
-        <h2>교정</h2>
-        <label>꼼꼼함(effort)
-          <select id="effort">
-            <option value="low">낮음 (가장 저렴)</option>
-            <option value="medium">보통</option>
-            <option value="high">높음 (권장)</option>
-            <option value="xhigh">매우 높음 (느림, 비쌈)</option>
-          </select>
-        </label>
-        <label class="inline"><input type="checkbox" id="verify"> 2차 검증: OCR과 다른 곳만 원본으로 다시 보고 고칠 곳만 고침</label>
-        <label class="inline"><input type="checkbox" id="useToc"> [목차보기]를 읽어 제목 단계 판단에 사용</label>
-        <label>원본 이미지 해상도 (클수록 정확, 비쌈)
-          <select id="imageMax">
-            <option value="1600">1600px</option>
-            <option value="2000">2000px (권장)</option>
-            <option value="2400">2400px</option>
-          </select>
-        </label>
-      </div>
-      <div class="card">
-        <h2>규칙</h2>
-        <label>줄표(―) 앞뒤 띄어쓰기
+      <div id="advancedBox" class="card hidden">
+        <h2>상세 설정</h2>
+        <label class="inline"><input type="checkbox" id="verify"> 2차 검증</label>
+        <label>줄표(―) 앞뒤
           <select id="dashSpacing">
-            <option value="attach">붙여 쓰기 (안내서 규칙)</option>
-            <option value="keep">원본대로 두기</option>
+            <option value="attach">붙여 쓰기</option>
+            <option value="keep">원본대로</option>
           </select>
         </label>
-        <label class="inline"><input type="checkbox" id="unitSymbols"> 숫자 뒤 cm, kg 등을 ㎝, ㎏ 단위 기호로 바꾸기</label>
-      </div>
-      <div class="card">
-        <h2>시각자료</h2>
-        <label class="inline"><input type="checkbox" id="autoVisuals"> 그림·사진·그래프·도표·지도를 자동으로 잘라 넣기</label>
-      </div>
-      <div class="card">
-        <h2>자동 모드에서 멈출 때</h2>
-        <label class="inline"><input type="checkbox" id="runThrough"> <b>멈추지 않고 끝까지 진행</b>하고, 확인할 것은 검수 탭에 모아 마지막에 한 번에 확인</label>
-        <p class="small muted">이것을 끄면 아래 조건에서 쪽마다 멈춰요.</p>
-        <label class="inline"><input type="checkbox" checked disabled> 확인할 것(빨간 항목)이 있을 때</label>
-        <label class="inline"><input type="checkbox" id="stopOnVisuals"> 시각자료 이미지가 있는 쪽</label>
-        <label class="inline"><input type="checkbox" id="stopOnSpecial"> 장 표지·빈 면·사진만 있는 쪽 같은 특수한 쪽</label>
-        <label class="inline"><input type="checkbox" id="stopOnPageGuess"> 쪽 번호를 추정했을 때</label>
-        <label class="inline"><input type="checkbox" id="stopOnWarnings"> 규칙 검사 경고(낫표 짝 등)가 있을 때</label>
-        <label>남은 시간이 이보다 적으면 경고하고 멈춤(분) <input type="number" id="timeWarnMin" min="0" max="180" step="5"></label>
-      </div>
-      <div class="card">
-        <h2>자동 모드 속도</h2>
-        <label class="inline"><input type="checkbox" id="pacing"> 쪽마다 정해진 시간이 지난 뒤에 다음 쪽으로 넘어가기</label>
+        <label class="inline"><input type="checkbox" id="autoVisuals"> 시각자료 자동으로 잘라 넣기</label>
+        <label class="inline"><input type="checkbox" id="pacing"> 자동 모드 쪽 넘김 간격</label>
         <div class="row">
           <label class="inline">최소 <input type="number" id="paceMinSec" min="0" max="600" step="5" style="width:70px">초</label>
           <label class="inline">최대 <input type="number" id="paceMaxSec" min="0" max="600" step="5" style="width:70px">초</label>
         </div>
-        <p class="small muted">쪽을 연 때부터 이 범위에서 쪽마다 무작위로 정한 시간이 지나야 저장하고 넘어가요.</p>
+        <div class="row">
+          <button id="btnSaveAdvanced" class="primary">저장</button>
+          <button id="btnClearBook">이 책 작업 기록 지우기</button>
+        </div>
+        <div id="advancedMsg" class="small muted"></div>
       </div>
-      <div class="card">
-        <h2>표시</h2>
-        <label class="inline"><input type="checkbox" id="showCost"> 쪽마다 비용 표시</label>
-      </div>
-      <div class="row">
-        <button id="btnSaveAdvanced" class="primary">저장</button>
-        <button id="btnClearBook">이 책 작업 기록 지우기</button>
-      </div>
-      <div id="advancedMsg" class="small muted"></div>
     </section>
   </main>
 
@@ -207,7 +119,6 @@
   <div id="cropModal" class="modal hidden">
     <div class="modal-body">
       <div class="row between"><h2>영역 고치기</h2><button id="btnCropClose" class="small-btn">닫기</button></div>
-      <p class="small muted">상자를 끌어 옮기고, 네 모서리를 끌어 크기를 바꾸세요.</p>
       <div id="cropStage" class="crop-stage">
         <img id="cropPage" alt="원본 쪽">
         <div id="cropBox" class="crop-box">

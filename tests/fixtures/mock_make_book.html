@@ -5,7 +5,7 @@
 <div id="makeBook"><div class="makeBox">
  <div class="makeTop"><div class="contral">
   <button type="button" class="prev">이전</button>
-  <div class="paging"><input type="text" id="curr_page" value="__PAGE__" curr-page="__PAGE__"> / 165</div>
+  <div class="paging"><input type="text" id="curr_page" value="__PAGE__" curr-page="__PAGE__"> / __END__</div>
   <button type="button" class="next" onclick="saveGo('next')">다음</button>
  </div><div class="time">02시간 15분 37초</div></div>
  <div class="makeCon"><div class="lfImg"><span id="zoom"><img src="/making/file.php?p=__PAGE__" id="book_img"></span></div>
@@ -27,7 +27,7 @@
     updateElement() { document.getElementById('content').value = this._data; },
   } } };
   function saveGo(gubun) {
-    var book_page = __PAGE__, end_page = 165;
+    var book_page = __PAGE__, end_page = __END__;
     if (gubun == 'next') { book_page += 1; if (book_page > end_page) { alert('다음 페이지가 없습니다.'); return false; } }
     CKEDITOR.instances.content.updateElement();
     var v = document.getElementById('content').value;

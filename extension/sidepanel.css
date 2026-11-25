@@ -92,3 +92,16 @@ h3 { font-size: 13px; margin: 10px 0 6px; }
 .rv-page li.warn { color: var(--warn); }
 .rv-link { padding: 6px 0; border-bottom: 1px solid var(--line); }
 .rv-link .note { color: var(--muted); }
+.row.tight { gap: 4px; margin: 4px 0; }
+.spacer { flex: 1; }
+.pageline { margin: 6px 0 4px; }
+.pageline input { width: 56px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--err); cursor: help; }
+.dot.warn { background: var(--warn); }
+button.on { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+.toggles { margin-top: 10px; }
+.vthumb { display: inline-block; vertical-align: middle; margin: 2px 4px; cursor: pointer; }
+.vthumb img { max-width: 120px; max-height: 90px; border: 1px solid var(--line); background: #fff; display: block; }
+.vthumb.missing { color: var(--err); font-size: 12px; }
+#btnReview .badge { margin-left: 2px; }
+#tocText { width: 100%; }
