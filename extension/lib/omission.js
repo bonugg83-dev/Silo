@@ -53,3 +53,10 @@ export function suspiciousSpecial(ocr, pageKind) {
   if (!['blank', 'chapter_cover', 'visual_only'].includes(pageKind)) return false;
   return (bare(ocr).match(/[가-힣]/g) || []).length >= 120;
 }
+
+/** 앞쪽 끝 글이 이 쪽 처음에 또 나오는지 (쪽 경계에서 같은 문장을 두 번 씀) */
+export function repeatsPrevEnd(prevText, text) {
+  const end = bare(prevText).slice(-20);
+  if (end.length < 15) return false;
+  return bare(text).slice(0, 120).includes(end);
+}

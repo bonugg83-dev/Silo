@@ -179,27 +179,38 @@ function section(title, body) {
   return body && String(body).trim() ? `<${title}>\n${String(body).trim()}\n</${title}>\n\n` : '';
 }
 
-/** 1차 작성 요청 본문 */
-export function buildWriteMessage(ctx) {
-  let t = '';
+/**
+ * 책마다 같은 부분(책 정보·제작 Tip·목차·줄표 규칙). 시스템 지침 뒤에 따로 두어 캐시한다
+ * (같은 책의 다음 쪽부터는 싸게 다시 읽힘).
+ */
+export function buildBookBlock(ctx) {
+  let t = '이 책의 정보입니다. 이 책의 모든 쪽에 똑같이 적용하세요.\n\n';
   t += section('book', ctx.bookInfo);
   t += section('production_tip', ctx.tip);
   t += section('table_of_contents', ctx.toc);
+  t += section('dash_spacing', ctx.dashSpacing === 'keep'
+    ? '이 책은 줄표 앞뒤 띄어쓰기를 원본대로 유지합니다.'
+    : '줄표(―) 앞뒤는 붙여 씁니다.');
+  return t.trim();
+}
+
+/** 1차 작성 요청 본문 (쪽마다 바뀌는 것만) */
+export function buildWriteMessage(ctx) {
+  let t = '';
   t += section('headings_used_so_far', ctx.headingsSoFar);
+  t += section('note_labels_used_so_far', ctx.noteLabels ? `앞쪽에서 쓴 주석 이름: ${ctx.noteLabels} (같은 종류의 주석은 같은 이름을 쓰세요)` : '');
+  t += section('visual_titles_so_far', ctx.visualTitles);
   t += section('previous_page_ending', ctx.prevTail);
   t += section('pending_footnotes', ctx.pendingFootnotes ? `앞쪽에 번호만 있고 설명이 없는 각주: ${ctx.pendingFootnotes}` : '');
   t += section('page_info', `작업 쪽: ${ctx.currPage}\n편집 화면 쪽 번호 칸: ${ctx.pageField || '(비어 있음)'}${ctx.pageTotal ? `\n배정 범위: ${ctx.pageTotal}` : ''}`);
   t += section('ocr_text', ctx.ocrText || '(OCR 텍스트 없음)');
   t += section('image_size', `원본 이미지 크기: 가로 ${ctx.imageWidth}px, 세로 ${ctx.imageHeight}px (visuals의 box 좌표 기준)`
     + (ctx.zoomed ? '\n첫 이미지가 쪽 전체이고, 그 뒤 두 장은 같은 쪽의 위쪽 절반과 아래쪽 절반을 확대한 것입니다(작은 글씨·각주 번호·낫표 획 확인용). box 좌표는 첫 이미지 기준으로 적으세요.' : ''));
-  t += section('dash_spacing', ctx.dashSpacing === 'keep'
-    ? '이 책은 줄표 앞뒤 띄어쓰기를 원본대로 유지합니다.'
-    : '줄표(―) 앞뒤는 붙여 씁니다.');
   t += '위 원본 이미지가 이 쪽의 원본입니다. 규칙에 맞게 이 쪽의 전자도서 텍스트를 작성하세요.';
   return t;
 }
 
-/** 2차 검증: OCR과 다른 곳만 원본으로 다시 보고, 고칠 곳만 답한다 */
+/** 2차 검증: 고칠 곳만 답한다 */
 export const VERIFY_SCHEMA = {
   type: 'object',
   additionalProperties: false,

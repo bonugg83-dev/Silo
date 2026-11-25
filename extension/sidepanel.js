@@ -1,7 +1,7 @@
 import { applyRules } from './lib/rules.js';
 import { diffWords, disagreements } from './lib/diff.js';
 import {
-  buildWriteMessage, buildVerifyMessage, buildTocMessage, TOC_SYSTEM_PROMPT, TOC_SCHEMA, VERIFY_SCHEMA,
+  buildWriteMessage, buildVerifyMessage, buildBookBlock, buildTocMessage, TOC_SYSTEM_PROMPT, TOC_SCHEMA, VERIFY_SCHEMA,
 } from './lib/prompt.js';
 import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import {
@@ -10,7 +10,7 @@ import {
 import { findLinks, putNoteAtMarker, removeNoteLine } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
-import { findOmissions, tooShort, suspiciousSpecial } from './lib/omission.js';
+import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
 import { tidyMessage, sortReview } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
 import {
@@ -367,6 +367,22 @@ function headingsSoFar(book, currPage) {
   }
   return lines.slice(-30).join('\n');
 }
+/** 앞쪽들에서 쓴 주석 이름(각주/미주/주석…)과 시각자료 제목 줄 (같은 책 안에서 같은 형식을 쓰게) */
+function earlierPages(book, currPage) {
+  return Object.keys(book.pages).map(Number).filter((p) => p < currPage).sort((a, b) => a - b).map((p) => [p, book.pages[p].text || '']);
+}
+function noteLabelsSoFar(book, currPage) {
+  const names = new Set();
+  for (const [, t] of earlierPages(book, currPage)) for (const m of t.matchAll(/\[(각주|미주|주석|후주|주)(\d+|\*+)/g)) names.add(m[1]);
+  return [...names].join(', ');
+}
+function visualTitlesSoFar(book, currPage) {
+  const out = [];
+  for (const [p, t] of earlierPages(book, currPage)) {
+    for (const line of t.split('\n')) if (/^\[(그림|사진|그래프|도표|지도|표|글상자)\]/.test(line)) out.push(`${p}쪽: ${line}`);
+  }
+  return out.slice(-6).join('\n');
+}
 
 // ---------- 화면 상태 ----------
 let lastStatusError = '';
@@ -464,6 +480,8 @@ async function analyze() {
     tip: info.tipText + (info.tipImages?.length ? '\n(제작 Tip에 이미지가 있어요. 이미지 내용은 볼 수 없으니 관련 판단이 필요하면 flags에 적으세요.)' : ''),
     toc: settings.useToc ? book.toc : '',
     headingsSoFar: headingsSoFar(book, info.currPage),
+    noteLabels: noteLabelsSoFar(book, info.currPage),
+    visualTitles: visualTitlesSoFar(book, info.currPage),
     prevTail: prev ? prev.text.slice(-600) : '',
     currPage: info.currPage,
     pageField: info.nonePage ? '페이지번호 없음' : info.pageField,
@@ -475,8 +493,9 @@ async function analyze() {
     imageHeight: sent.height,
     zoomed: zoomImgs.length > 0,
   };
+  const bookBlock = buildBookBlock(ctx);
   const call = (extra) => callClaude({
-    apiKey: activeKey(), model: settings.model, effort: settings.effort, signal: abort.signal, ...extra,
+    apiKey: activeKey(), model: settings.model, effort: settings.effort, signal: abort.signal, bookBlock, ...extra,
   });
 
   let cost = 0;
@@ -536,6 +555,9 @@ async function analyze() {
         message: `빠졌을 수 있음: “${o.length > 40 ? `${o.slice(0, 40)}…` : o}”` });
     }
     if (tooShort(ocrText, checked.text)) extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: 'OCR보다 글이 많이 짧음' });
+  }
+  if (prev?.text && repeatsPrevEnd(prev.text, checked.text)) {
+    extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: '앞쪽 끝 문장이 이 쪽 처음에 다시 나옴' });
   }
   if (suspiciousSpecial(ocrText, result.page_kind)) {
     extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: `${PAGE_KIND[result.page_kind]}로 처리했는데 OCR 글자가 많음` });
@@ -634,7 +656,7 @@ function sortFlag(f) {
   if (f.kind === 'heading') return null;
   if (f.kind === 'visual' && !/표/.test(f.message)) return null;
   const out = { ...f, message: tidyMessage(f.message) };
-  if (f.kind === 'other' && !/짧음|OCR 글자가 많음/.test(f.message)) out.needs_review = false;
+  if (f.kind === 'other' && !/짧음|OCR 글자가 많음|다시 나옴/.test(f.message)) out.needs_review = false;
   return out;
 }
 

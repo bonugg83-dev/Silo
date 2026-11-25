@@ -62,3 +62,26 @@ test('검수 목록 정렬: 빨강 → 노랑 → 없음, 같은 색은 쪽 순�
   assert.deepEqual(sortReview(pages, { showAll: true }).map((x) => x.n), [2, 5, 3, 1, 4]);
   assert.deepEqual(sortReview(pages, { showAll: true, desc: true }).map((x) => x.n), [1, 4, 3, 2, 5]);
 });
+
+test('쪽 경계: 앞쪽 끝 문장을 다시 쓰면 잡음', async () => {
+  const { repeatsPrevEnd } = await import('../extension/lib/omission.js');
+  const prev = '앞 문단입니다.\n그는 마침내 바다로 나아가 오래도록 돌아오지 않았다.';
+  assert.ok(repeatsPrevEnd(prev, '그는 마침내 바다로 나아가 오래도록 돌아오지 않았다.\n새 문단.'));
+  assert.ok(!repeatsPrevEnd(prev, '새 문단이 시작된다. 아주 다른 이야기다.'));
+});
+
+test('주석 표시 띄어쓰기 정리', async () => {
+  const { applyRules } = await import('../extension/lib/rules.js');
+  assert.equal(applyRules('본문[각주 3]이다.').text, '본문[각주3]이다.');
+  assert.equal(applyRules('[각주12 :설명]').text, '[각주12: 설명]');
+});
+
+test('사이드 패널이 쓰는 이름을 모듈들이 모두 내보냄', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../extension/sidepanel.js', import.meta.url), 'utf8');
+  for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*'\.\/lib\/(\w+)\.js'/g)) {
+    if (['page', 'splash', 'convert', 'visuals', 'cleanup'].includes(m[2])) continue; // 브라우저 전용 모듈
+    const mod = await import(`../extension/lib/${m[2]}.js`);
+    for (const name of m[1].split(',').map((x) => x.trim()).filter(Boolean)) assert.ok(name in mod, `${m[2]}.js에 ${name} 없음`);
+  }
+});

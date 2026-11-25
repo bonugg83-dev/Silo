@@ -206,7 +206,9 @@ assert.equal(c1.body.fallbacks, 'default');
 assert.equal(c1.headers['anthropic-dangerous-direct-browser-access'], 'true');
 assert.equal(c1.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
 assert.equal(c1.body.messages[0].content[0].type, 'image');
-assert.match(c1.body.messages[0].content[1].text, /미주는 '주석'으로/); // 제작 Tip
+assert.match(c1.body.system[1].text, /미주는 '주석'으로/); // 제작 Tip: 책마다 같은 부분은 시스템 뒤에 따로 캐시
+assert.ok(c1.body.system[1].cache_control);
+assert.ok(!/production_tip/.test(c1.body.messages[0].content[1].text));
 assert.match(c1.body.messages[0].content[1].text, /남풍의 밤이 여- 큰 별/); // OCR 텍스트
 assert.match(c1.body.messages[0].content[1].text, /가로 800px, 세로 1200px/);
 assert.ok(c1.body.messages[0].content[1].cache_control, '1차 질문 캐시');
@@ -256,7 +258,8 @@ await panel.click('#tgToc');
 assert.match(await panel.inputValue('#tocText'), /@@\[06\./);
 await panel.click('#btnAnalyze');
 await panel.waitForFunction(() => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
-assert.match(apiCalls.at(-2).body.messages[0].content[1].text, /@@\{1\. 풀잎 145/);
+assert.match(apiCalls.at(-2).body.system[1].text, /@@\{1\. 풀잎 145/);
+assert.equal(apiCalls.at(-1).body.system[1].text, apiCalls.at(-2).body.system[1].text, '2차 검증도 같은 책 블록(캐시)');
 
 // 5. 복붙하기 (저장은 하지 않음): 흰 물이 차오름
 await panel.click('#btnApply');

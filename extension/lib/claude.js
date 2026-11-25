@@ -30,7 +30,7 @@ function parseDataUrl(dataUrl) {
  */
 export async function callClaude(params) {
   const { apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true,
-    schema = RESULT_SCHEMA, system = SYSTEM_PROMPT, prior = null, cacheUser = false } = params;
+    schema = RESULT_SCHEMA, system = SYSTEM_PROMPT, bookBlock = '', prior = null, cacheUser = false } = params;
   const images = params.images || (imageDataUrl ? [imageDataUrl] : []);
   if (!apiKey) throw new ClaudeError('설정에서 Claude API 키를 넣어 주세요.');
   const body = {
@@ -41,7 +41,11 @@ export async function callClaude(params) {
       effort,
       format: { type: 'json_schema', schema },
     },
-    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+    system: [
+      { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
+      // 책마다 같은 부분도 따로 캐시 (같은 책 다음 쪽부터 싸게)
+      ...(bookBlock ? [{ type: 'text', text: bookBlock, cache_control: { type: 'ephemeral' } }] : []),
+    ],
     messages: [],
   };
   const userContent = [
