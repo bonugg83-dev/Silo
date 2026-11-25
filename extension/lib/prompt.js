@@ -54,7 +54,11 @@ export const SYSTEM_PROMPT = `당신은 실로암시각장애인복지관 "마�
 - 각주(같은 쪽 아래 설명): 본문의 주석 번호 위치에 "[각주1: 설명 내용]" 형태로 넣고, 쪽 아래의 각주 설명 줄은 지웁니다. 원본 각주 번호의 괄호는 지우고 번호만 씁니다. 기호(*, † 등)로 된 각주는 [각주*: ...], [각주**: ...].
 - 미주(설명이 책 뒤에 있는 것): 본문 번호 위치에 "[미주1]"처럼 번호만 넣습니다. 이름은 "제작 Tip(주의사항)"에 안내된 것을 최우선으로 따르고(예: 주석, 주, 후주 → "[주석1]"), 안내가 없으면 원문의 표기(차례·설명 페이지 제목)를 따르고, 그것도 없으면 "미주"로 씁니다.
 - 미주 설명 페이지(책 뒤)에서는 번호마다 [미주]를 붙이지 않고 원문대로 번호와 내용만 씁니다.
-- 각주 설명이 다른 쪽에 있어 옮길 수 없으면 번호 위치에 [각주N]만 넣고 flags에 적습니다. 제목에 달린 주석의 설명은 그다음 문단에 씁니다. 표 안 주석 설명은 [표 끝] 앞에 씁니다. 시의 각주 설명은 시가 끝난 뒤 한 줄 비우고 씁니다.
+- 다른 쪽에 걸친 각주: 프로그램이 쪽을 하나씩 처리한 뒤 마지막에 앞뒤 쪽을 이어 줍니다. 그러니 다음 두 경우는 정해진 대로만 쓰고 따로 적으세요.
+  · 각주 번호는 이 쪽 본문에 있는데 그 설명이 이 쪽에 없으면: 번호 위치에 "[각주3]"처럼 번호만 넣고 footnotes_without_note에 label("각주3")을 적습니다.
+  · 이 쪽 아래에 각주 설명이 있는데 그 번호가 이 쪽 본문에 없으면(앞쪽 본문에 번호가 있음): 그 설명을 text 맨 위에 "[각주3: 설명]" 한 줄로 쓰고 notes_without_marker에 label("각주3")과 note(설명, 대괄호 안 ": " 뒤의 글 그대로)를 적습니다. 설명이 앞쪽에서 이어지는 경우도 같습니다.
+  · pending_footnotes에 앞쪽의 설명 없는 각주 번호가 주어지면 이 쪽 아래 설명과 맞춰 보세요.
+- 제목에 달린 주석의 설명은 그다음 문단에 씁니다. 표 안 주석 설명은 [표 끝] 앞에 씁니다. 시의 각주 설명은 시가 끝난 뒤 한 줄 비우고 씁니다.
 - 성경의 작은 장·절 숫자는 주석이 아닙니다.
 - 주석 처리는 사람이 꼭 확인해야 하므로 flags에 kind "footnote"로 남기세요.
 
@@ -111,7 +115,7 @@ export const SYSTEM_PROMPT = `당신은 실로암시각장애인복지관 "마�
 export const RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['text', 'page_number', 'page_kind', 'is_blank_page', 'has_poem_or_quote', 'visuals', 'flags', 'notes'],
+  required: ['text', 'page_number', 'page_kind', 'is_blank_page', 'has_poem_or_quote', 'visuals', 'footnotes_without_note', 'notes_without_marker', 'flags', 'notes'],
   properties: {
     text: { type: 'string' },
     page_number: { type: 'string' },
@@ -134,6 +138,17 @@ export const RESULT_SCHEMA = {
             properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } },
           },
         },
+      },
+    },
+    footnotes_without_note: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: false, required: ['label'], properties: { label: { type: 'string' } } },
+    },
+    notes_without_marker: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['label', 'note'],
+        properties: { label: { type: 'string' }, note: { type: 'string' } },
       },
     },
     flags: {
@@ -166,6 +181,7 @@ export function buildWriteMessage(ctx) {
   t += section('table_of_contents', ctx.toc);
   t += section('headings_used_so_far', ctx.headingsSoFar);
   t += section('previous_page_ending', ctx.prevTail);
+  t += section('pending_footnotes', ctx.pendingFootnotes ? `앞쪽에 번호만 있고 설명이 없는 각주: ${ctx.pendingFootnotes}` : '');
   t += section('page_info', `작업 쪽: ${ctx.currPage}\n편집 화면 쪽 번호 칸: ${ctx.pageField || '(비어 있음)'}${ctx.pageTotal ? `\n배정 범위: ${ctx.pageTotal}` : ''}`);
   t += section('ocr_text', ctx.ocrText || '(OCR 텍스트 없음)');
   t += section('image_size', `원본 이미지 크기: 가로 ${ctx.imageWidth}px, 세로 ${ctx.imageHeight}px (visuals의 box 좌표 기준)`);

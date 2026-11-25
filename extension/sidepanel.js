@@ -5,12 +5,13 @@ import {
 } from './lib/prompt.js';
 import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import {
-  pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave,
+  pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
 } from './lib/page.js';
+import { findLinks, putNoteAtMarker, removeNoteLine } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage } from './lib/convert.js';
 import { applyFixes } from './lib/fixes.js';
 import {
-  parseVisualBlocks, buildEditorData, existingFigureSrcs, cropImage, IMAGE_KINDS,
+  parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,7 @@ const DEFAULT_SETTINGS = {
   stopOnWarnings: false,
   timeWarnMin: 20,
   showCost: true,
+  runThrough: true,
   pacing: true,
   paceMinSec: 60,
   paceMaxSec: 90,
@@ -125,7 +127,7 @@ const ADV_FIELDS = {
   effort: 'value', verify: 'checked', useToc: 'checked', imageMax: 'value', dashSpacing: 'value', unitSymbols: 'checked',
   autoVisuals: 'checked', stopOnVisuals: 'checked', stopOnSpecial: 'checked', stopOnPageGuess: 'checked',
   stopOnWarnings: 'checked', timeWarnMin: 'value', showCost: 'checked',
-  pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
+  runThrough: 'checked', pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
 };
 function fillForms() {
   const sel = $('model');
@@ -240,6 +242,7 @@ async function refreshStatus() {
     $('timeWarn').textContent = warn;
     const book = await getBook(info.bookIdx);
     showTocState(book);
+    updateReviewBadge(book);
     return { tab, info };
   } catch (e) {
     $('pageStatus').textContent = e.message;
@@ -310,6 +313,10 @@ async function analyze() {
   await ensureToc(tab, info, book, abort.signal);
 
   const prev = book.pages[info.currPage - 1];
+  const linked = new Set((book.links || []).map((l) => `${l.from}:${l.label}`));
+  const pendingFootnotes = [info.currPage - 2, info.currPage - 1]
+    .flatMap((p) => (book.pages[p]?.footMissing || []).filter((l) => !linked.has(`${p}:${l}`)).map((l) => `${p}쪽 [${l}]`))
+    .join(', ');
   const ctx = {
     bookInfo: info.bookInfo,
     tip: info.tipText + (info.tipImages?.length ? '\n(제작 Tip에 이미지가 있어요. 이미지 내용은 볼 수 없으니 관련 판단이 필요하면 flags에 적으세요.)' : ''),
@@ -321,6 +328,7 @@ async function analyze() {
     pageTotal: isNaN(info.minPage) ? '' : `${info.minPage}~${info.maxPage}쪽`,
     ocrText,
     dashSpacing: settings.dashSpacing,
+    pendingFootnotes,
     imageWidth: sent.width,
     imageHeight: sent.height,
   };
@@ -361,6 +369,18 @@ async function analyze() {
   }
   sessionCost += cost;
 
+  // 다른 쪽에 걸친 각주
+  const footMissing = (result.footnotes_without_note || []).map((f) => f.label).filter(Boolean);
+  const footOrphans = (result.notes_without_marker || []).filter((f) => f.label);
+  for (const l of footMissing) {
+    extraFlags.push({ kind: 'footnote', needs_review: true, quote: `[${l}]`,
+      message: `${l}의 설명이 이 쪽에 없어요. 다음 쪽에서 설명을 찾으면 검수 탭에서 이 자리로 옮길 수 있어요.` });
+  }
+  for (const o of footOrphans) {
+    extraFlags.push({ kind: 'footnote', needs_review: true, quote: `[${o.label}:`,
+      message: `${o.label} 설명은 앞쪽 번호에 붙일 것이라 이 쪽 맨 위에 따로 뒀어요. 검수 탭에서 앞쪽으로 옮길 수 있어요.` });
+  }
+
   // 시각자료
   const visuals = await prepareVisuals(tab, info, checked.text, result.visuals || [], sent);
 
@@ -368,7 +388,7 @@ async function analyze() {
     tabId: tab.id, info, ocrText, result, cost, sentImage: sent,
     text: checked.text, ruleChanges: checked.changes, ruleWarnings: checked.warnings,
     flags: [...(result.flags || []), ...extraFlags], notes: [result.notes, verifyNote].filter(Boolean).join('\n'),
-    visuals, book,
+    visuals, book, footMissing, footOrphans,
   };
   current.page = decidePageNumber(info, result, book);
   render();
@@ -379,12 +399,13 @@ async function analyze() {
 async function prepareVisuals(tab, info, text, aiVisuals, sent) {
   const blocks = parseVisualBlocks(text);
   if (!blocks.length) return [];
-  const existing = existingFigureSrcs(info.ocrHtml);
+  const existing = existingFigures(info.ocrHtml);
   let original = null;
   const list = [];
   for (let i = 0; i < blocks.length; i++) {
     const v = aiVisuals[i];
-    const item = { kind: blocks[i].kind, include: settings.autoVisuals, crop: null, src: existing[i] || '', reused: !!existing[i], box: null, error: '' };
+    const ex = existing.length === blocks.length ? existing[i] : null;
+    const item = { kind: blocks[i].kind, include: settings.autoVisuals || !!ex, crop: null, src: ex?.src || '', width: ex?.width || 0, reused: !!ex, box: null, error: '' };
     if (v?.box && sent.width) {
       item.box = {
         x: clamp01(v.box.x / sent.width), y: clamp01(v.box.y / sent.height),
@@ -435,6 +456,11 @@ const PAGE_KIND = { chapter_cover: '장 표지', visual_only: '사진·그림만
 function allIssues() {
   const items = [];
   const c = current;
+  if (c.storedIssues) {
+    items.push(...c.storedIssues);
+    c.visuals.forEach((v, i) => { if (v.include && v.error) items.push({ cls: 'review', text: `[시각자료 ${i + 1}] ${v.error}`, quote: '' }); });
+    return items;
+  }
   if (c.page.note) items.push({ cls: 'review', text: `[쪽 번호] ${c.page.note}`, quote: '' });
   if (PAGE_KIND[c.result.page_kind]) {
     items.push({ cls: 'review', text: `[특수한 쪽] ${PAGE_KIND[c.result.page_kind]}이에요. 처음에는 확인 후 넣어 주세요.`, quote: '' });
@@ -479,6 +505,7 @@ function render() {
   renderDiff(c.ocrText, c.text);
   updateLiveWarn();
   $('cost').classList.toggle('hidden', !settings.showCost);
+  if (c.reviewing) $('cost').classList.add('hidden');
   $('cost').textContent = `이 쪽 비용 약 $${c.cost.toFixed(3)} (약 ${Math.round(c.cost * 1450)}원) · 이번 세션 합계 약 $${sessionCost.toFixed(2)} (목차 정리 포함)`;
 }
 
@@ -554,7 +581,7 @@ function renderVisuals() {
     line.append(inc, kind);
     const line2 = document.createElement('div');
     line2.className = 'row';
-    if (!v.reused) {
+    if (!v.reused && current.sentImage) {
       const fixBtn = document.createElement('button');
       fixBtn.className = 'small-btn';
       fixBtn.textContent = '영역 고치기';
@@ -678,7 +705,7 @@ $('btnCropApply').addEventListener('click', async () => {
 });
 
 // ---------- 넣기 / 저장 ----------
-async function applyToEditor() {
+async function applyToEditor({ reviewed = true } = {}) {
   if (!current) throw new Error('먼저 “이 쪽 교정하기”를 눌러 주세요.');
   if (editing) current.text = $('output').value;
   const text = current.text.replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '');
@@ -699,7 +726,7 @@ async function applyToEditor() {
   for (let i = 0; i < blocks.length; i++) {
     const v = current.visuals[i];
     if (!v || !v.include) { figures.push(null); continue; }
-    if (v.reused && v.src) { figures.push({ src: v.src, width: 0 }); continue; }
+    if (v.reused && v.src) { figures.push({ src: v.src, width: v.width || 0 }); continue; }
     if (!v.crop) { figures.push(null); continue; }
     if (!v.uploadedSrc) {
       setProgress(`시각자료 ${i + 1}을 올리는 중…`);
@@ -718,8 +745,17 @@ async function applyToEditor() {
   renderVisuals();
 
   const book = await getBook(info.bookIdx);
-  book.pages[info.currPage] = { text, pageNumber: nonePage ? '' : pageNum, at: Date.now() };
+  const old = book.pages[info.currPage] || {};
+  const issues = allIssues().map((x) => ({ cls: x.cls, text: x.text, quote: x.quote || '' }));
+  book.pages[info.currPage] = {
+    text, pageNumber: nonePage ? '' : pageNum, at: Date.now(), issues,
+    reviewed: reviewed || !issues.length,
+    footMissing: current.footMissing ?? old.footMissing ?? [],
+    footOrphans: current.footOrphans ?? old.footOrphans ?? [],
+  };
+  if (current.footOrphans?.length) findLinks(book, info.currPage, current.footOrphans);
   await putBook(info.bookIdx, book);
+  updateReviewBadge(book);
   setProgress('');
   return { tab, info };
 }
@@ -748,8 +784,8 @@ async function waitForEditor(tabId, expectedPage) {
   throw new Error('다음 쪽 편집기가 준비되지 않았어요.');
 }
 
-async function save(mode) {
-  const { tab, info } = await applyToEditor();
+async function save(mode, { reviewed = true } = {}) {
+  const { tab, info } = await applyToEditor({ reviewed });
   if (mode === 'next' && info.currPage >= info.maxPage) mode = 'temp';
   if (mode === 'temp') {
     const r = await runInPage(tab.id, pageSave, ['temp']);
@@ -775,6 +811,7 @@ async function save(mode) {
 function needsStop() {
   const c = current;
   const reasons = [];
+  if (settings.runThrough) return ''; // 끝까지 진행하고 검수 탭에서 한 번에 확인
   if (c.flags.some((f) => f.needs_review)) reasons.push('확인할 항목이 있어요');
   if (c.visuals.some((v) => v.include && v.error)) reasons.push('잘라내지 못한 시각자료가 있어요');
   if (settings.stopOnPageGuess && c.page.guessed) reasons.push('쪽 번호를 추정했어요');
@@ -837,9 +874,10 @@ async function autoLoop() {
       }
       if (!(await waitPace(openedAt, paceSec, current.info.currPage))) break;
       setProgress(`${current.info.currPage}쪽 저장 후 다음 쪽으로…`);
-      const r = await save('next');
+      const r = await save('next', { reviewed: false });
       if (!r.moved) {
-        setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요. 모든 쪽을 확인한 뒤 “제출하기”를 직접 눌러 주세요.`);
+        setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요. 검수 탭에서 확인할 것을 본 뒤 “제출하기”를 직접 눌러 주세요.`);
+        document.querySelector('.tab[data-tab="review"]').click();
         break;
       }
       $('result').classList.add('hidden');
@@ -955,6 +993,216 @@ async function rebuildToc() {
 }
 $('btnRebuildToc').addEventListener('click', guard(rebuildToc));
 $('btnTocRetry').addEventListener('click', guard(rebuildToc));
+
+// ---------- 검수 (끝까지 한 뒤 한 번에 확인) ----------
+let reviewShowAll = false;
+function reviewItems(book) {
+  return Object.keys(book.pages).map(Number).sort((a, b) => a - b)
+    .map((n) => ({ n, rec: book.pages[n] }))
+    .filter(({ rec }) => (rec.issues || []).length);
+}
+function updateReviewBadge(book) {
+  const left = reviewItems(book).filter(({ rec }) => !rec.reviewed).length
+    + (book.links || []).filter((l) => !l.done).length;
+  $('reviewBadge').classList.toggle('hidden', !left);
+  $('reviewBadge').textContent = String(left);
+}
+
+async function renderReview() {
+  let tab;
+  let info;
+  try {
+    tab = await getEditorTab();
+    info = await runInPage(tab.id, pageRead);
+  } catch (e) {
+    $('reviewSummary').textContent = e.message;
+    return;
+  }
+  const book = await getBook(info.bookIdx);
+  updateReviewBadge(book);
+  const items = reviewItems(book);
+  const todo = items.filter(({ rec }) => !rec.reviewed);
+  const links = (book.links || []).filter((l) => !l.done);
+  const doneCount = Object.keys(book.pages).length;
+  $('reviewSummary').textContent = todo.length || links.length
+    ? `작업한 쪽 ${doneCount}개 중 확인할 쪽 ${todo.length}개${links.length ? `, 옮길 각주 ${links.length}개` : ''}. 쪽을 열어 고치고 “넣고 임시저장”을 누르면 확인함으로 바뀌어요.`
+    : `작업한 쪽 ${doneCount}개, 확인할 것이 남지 않았어요. 모든 쪽을 확인했으면 “제출하기”를 직접 눌러 주세요.`;
+
+  $('reviewLinksBox').classList.toggle('hidden', !links.length);
+  const lb = $('reviewLinks');
+  lb.innerHTML = '';
+  for (const link of links) {
+    const row = document.createElement('div');
+    row.className = 'rv-link';
+    const t = document.createElement('div');
+    t.className = 'small';
+    t.textContent = `${link.from}쪽 [${link.label}] ← ${link.to}쪽 맨 위 설명`;
+    const note = document.createElement('div');
+    note.className = 'small note';
+    note.textContent = link.note.length > 120 ? `${link.note.slice(0, 120)}…` : link.note;
+    const btn = document.createElement('button');
+    btn.className = 'small-btn';
+    btn.textContent = '반영';
+    btn.addEventListener('click', guard(async () => { await applyLink(link); await renderReview(); }));
+    row.append(t, note, btn);
+    if (link.error) {
+      const er = document.createElement('div');
+      er.className = 'small';
+      er.style.color = 'var(--err)';
+      er.textContent = link.error;
+      row.append(er);
+    }
+    lb.appendChild(row);
+  }
+
+  const box = $('reviewPages');
+  box.innerHTML = '';
+  for (const { n, rec } of (reviewShowAll ? items : todo)) {
+    const card = document.createElement('div');
+    card.className = `rv-page${rec.reviewed ? ' done' : ''}`;
+    const h = document.createElement('h3');
+    h.textContent = `${n}쪽${rec.pageNumber ? ` (쪽 번호 ${rec.pageNumber})` : ''}${rec.reviewed ? ' · 확인함' : ''}`;
+    const ul = document.createElement('ul');
+    ul.className = 'small';
+    for (const it of rec.issues) {
+      const li = document.createElement('li');
+      li.className = it.cls;
+      li.textContent = it.text;
+      ul.appendChild(li);
+    }
+    const row = document.createElement('div');
+    row.className = 'row';
+    const open = document.createElement('button');
+    open.className = 'small-btn primary';
+    open.textContent = '이 쪽 열기';
+    open.addEventListener('click', guard(() => openPageForReview(n)));
+    const ok = document.createElement('button');
+    ok.className = 'small-btn';
+    ok.textContent = rec.reviewed ? '다시 확인할 것으로' : '확인함';
+    ok.addEventListener('click', async () => {
+      const b = await getBook(info.bookIdx);
+      b.pages[n].reviewed = !b.pages[n].reviewed;
+      await putBook(info.bookIdx, b);
+      renderReview();
+    });
+    row.append(open, ok);
+    card.append(h, ul, row);
+    box.appendChild(card);
+  }
+}
+
+/** 편집 화면을 n쪽으로 옮긴다 (이미 그 쪽이면 그대로) */
+async function gotoPage(tab, n) {
+  const info = await runInPage(tab.id, pageRead);
+  if (info.currPage === n) return info;
+  if (!isNaN(info.maxPage) && (n > info.maxPage || (!isNaN(info.minPage) && n < info.minPage))) throw new Error(`${n}쪽은 배정 범위 밖이에요.`);
+  const loaded = waitForPageLoad(tab.id, n);
+  try { await runInPage(tab.id, pageGoto, [n]); } catch { /* 이동 중 */ }
+  await loaded;
+  return waitForEditor(tab.id, n);
+}
+
+/** 저장해 둔 쪽을 다시 열어 패널에 보여 준다 (편집기 내용 기준) */
+async function openPageForReview(n) {
+  if (autoRunning) throw new Error('자동 모드를 멈춘 뒤에 열어 주세요.');
+  const tab = await getEditorTab();
+  setProgress(`${n}쪽으로 가는 중…`);
+  const info = await gotoPage(tab, n);
+  const book = await getBook(info.bookIdx);
+  const rec = book.pages[n] || {};
+  const text = editorHtmlToText(info.ocrHtml);
+  const figs = existingFigures(info.ocrHtml);
+  const blocks = parseVisualBlocks(text);
+  const aligned = figs.length === blocks.length;
+  const visuals = blocks.map((b, i) => {
+    const f = aligned ? figs[i] : null;
+    return { kind: b.kind, include: !!f, crop: null, src: f?.src || '', width: f?.width || 0, reused: !!f, box: null,
+      error: f ? '' : '그림이 아직 들어가 있지 않아요. 사이트의 이미지 자르기로 넣어 주세요.' };
+  });
+  editing = false;
+  current = {
+    tabId: tab.id, info, ocrText: text, result: { page_kind: 'body', notes: '' }, cost: 0, sentImage: null,
+    text, ruleChanges: [], ruleWarnings: [], flags: [], storedIssues: rec.issues || [], notes: '',
+    visuals, book, reviewing: true, footMissing: rec.footMissing, footOrphans: rec.footOrphans,
+    page: { value: info.nonePage ? '' : info.pageField, none: info.nonePage, note: '', guessed: false },
+  };
+  document.querySelector('.tab[data-tab="work"]').click();
+  render();
+  setProgress(`${n}쪽을 열었어요. 확인하고 고친 뒤 “넣고 임시저장”을 누르면 확인함으로 바뀌어요.`);
+}
+
+/** 편집기의 지금 내용을 text로 바꿔 넣고 임시저장 (그림은 그대로 둔다) */
+async function rewritePage(tab, n, change) {
+  const info = await gotoPage(tab, n);
+  const text = editorHtmlToText(info.ocrHtml);
+  const r = change(text);
+  if (!r.ok) throw new Error(`${n}쪽: ${r.why}`);
+  const figs = existingFigures(info.ocrHtml);
+  const blocks = parseVisualBlocks(r.text);
+  if (figs.length !== blocks.length) throw new Error(`${n}쪽: 그림 개수가 맞지 않아 자동으로 고치지 않았어요. 직접 고쳐 주세요.`);
+  const data = buildEditorData(r.text, figs);
+  const a = await runInPage(tab.id, pageApply, [data, info.pageField, info.nonePage]);
+  if (!a?.ok) throw new Error(`${n}쪽 넣기 실패: ${a?.error || ''}`);
+  const sv = await runInPage(tab.id, pageSave, ['temp']);
+  if (!sv?.ok) throw new Error(`${n}쪽 임시저장 실패: ${sv?.error || ''}`);
+  return { info, text: r.text };
+}
+
+async function applyLink(link) {
+  if (autoRunning) throw new Error('자동 모드를 멈춘 뒤에 반영해 주세요.');
+  const tab = await getEditorTab();
+  const info0 = await runInPage(tab.id, pageRead);
+  const bookIdx = info0.bookIdx;
+  const mark = async (patch) => {
+    const b = await getBook(bookIdx);
+    const l = (b.links || []).find((x) => x.from === link.from && x.label === link.label);
+    if (l) Object.assign(l, patch);
+    await putBook(bookIdx, b);
+    return b;
+  };
+  try {
+    setProgress(`${link.from}쪽 [${link.label}] 자리에 설명을 넣는 중…`);
+    const a = await rewritePage(tab, link.from, (t) => putNoteAtMarker(t, link.label, link.note));
+    setProgress(`${link.to}쪽 맨 위의 설명을 지우는 중…`);
+    const b2 = await rewritePage(tab, link.to, (t) => removeNoteLine(t, link.label));
+    const b = await mark({ done: true, error: '' });
+    const drop = (rec) => { if (rec) rec.issues = (rec.issues || []).filter((x) => !x.quote || !x.quote.includes(link.label)); };
+    if (b.pages[link.from]) {
+      b.pages[link.from].text = a.text;
+      b.pages[link.from].footMissing = (b.pages[link.from].footMissing || []).filter((l) => l !== link.label);
+      drop(b.pages[link.from]);
+    }
+    if (b.pages[link.to]) {
+      b.pages[link.to].text = b2.text;
+      b.pages[link.to].footOrphans = (b.pages[link.to].footOrphans || []).filter((o) => o.label !== link.label);
+      drop(b.pages[link.to]);
+    }
+    await putBook(bookIdx, b);
+    setProgress(`${link.from}쪽 [${link.label}]에 설명을 옮기고 두 쪽을 임시저장했어요.`);
+  } catch (e) {
+    await mark({ error: e.message });
+    throw e;
+  }
+}
+
+$('btnReviewRefresh').addEventListener('click', () => renderReview());
+$('btnReviewShowAll').addEventListener('click', () => {
+  reviewShowAll = !reviewShowAll;
+  $('btnReviewShowAll').textContent = reviewShowAll ? '확인할 쪽만 보기' : '확인한 쪽도 보기';
+  renderReview();
+});
+$('btnApplyAllLinks').addEventListener('click', guard(async () => {
+  const tab = await getEditorTab();
+  const info = await runInPage(tab.id, pageRead);
+  const book = await getBook(info.bookIdx);
+  let fail = 0;
+  for (const link of (book.links || []).filter((l) => !l.done)) {
+    try { await applyLink(link); } catch { fail++; }
+  }
+  await renderReview();
+  if (fail) throw new Error(`${fail}개는 반영하지 못했어요. 목록의 빨간 글씨를 보고 직접 고쳐 주세요.`);
+}));
+document.querySelector('.tab[data-tab="review"]').addEventListener('click', () => renderReview());
 
 async function openPractice() {
   const existing = (await chrome.tabs.query({})).find((t) => isPracticeUrl(t.url));

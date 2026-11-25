@@ -10,6 +10,7 @@
     <h1>마이픽 교정 도우미</h1>
     <nav>
       <button class="tab active" data-tab="work">작업</button>
+      <button class="tab" data-tab="review">검수 <span id="reviewBadge" class="badge hidden"></span></button>
       <button class="tab" data-tab="settings">설정</button>
       <button class="tab" data-tab="advanced">상세 설정</button>
     </nav>
@@ -96,6 +97,19 @@
       <p class="small muted">“제출하기”(최종 제출)는 이 도우미가 누르지 않아요. 모든 쪽을 확인한 뒤 직접 눌러 주세요.</p>
     </section>
 
+    <!-- 검수: 자동 모드로 끝까지 한 뒤 한 번에 확인 -->
+    <section id="tab-review" class="panel">
+      <div id="reviewSummary" class="status"></div>
+      <div id="reviewLinksBox" class="card hidden">
+        <h2>다른 쪽에 걸친 각주</h2>
+        <p class="small muted">앞쪽에는 번호만, 다음 쪽 맨 위에 설명이 있는 각주예요. “반영”을 누르면 앞쪽 번호 자리로 설명을 옮기고 두 쪽을 다시 임시저장해요.</p>
+        <div id="reviewLinks"></div>
+        <div class="row"><button id="btnApplyAllLinks" class="primary">모두 반영</button></div>
+      </div>
+      <div id="reviewPages"></div>
+      <div class="row"><button id="btnReviewRefresh" class="small-btn">새로 고침</button><button id="btnReviewShowAll" class="small-btn">확인한 쪽도 보기</button></div>
+    </section>
+
     <!-- 설정: 키와 모델 -->
     <section id="tab-settings" class="panel">
       <div class="card">
@@ -159,7 +173,9 @@
       </div>
       <div class="card">
         <h2>자동 모드에서 멈출 때</h2>
-        <label class="inline"><input type="checkbox" checked disabled> 확인할 것(빨간 항목)이 있을 때 (항상)</label>
+        <label class="inline"><input type="checkbox" id="runThrough"> <b>멈추지 않고 끝까지 진행</b>하고, 확인할 것은 검수 탭에 모아 마지막에 한 번에 확인</label>
+        <p class="small muted">이것을 끄면 아래 조건에서 쪽마다 멈춰요.</p>
+        <label class="inline"><input type="checkbox" checked disabled> 확인할 것(빨간 항목)이 있을 때</label>
         <label class="inline"><input type="checkbox" id="stopOnVisuals"> 시각자료 이미지가 있는 쪽</label>
         <label class="inline"><input type="checkbox" id="stopOnSpecial"> 장 표지·빈 면·사진만 있는 쪽 같은 특수한 쪽</label>
         <label class="inline"><input type="checkbox" id="stopOnPageGuess"> 쪽 번호를 추정했을 때</label>

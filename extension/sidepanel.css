@@ -83,3 +83,12 @@ h3 { font-size: 13px; margin: 10px 0 6px; }
 .crop-box .sw { left: -8px; bottom: -8px; cursor: nesw-resize; }
 .crop-box .se { right: -8px; bottom: -8px; cursor: nwse-resize; }
 #pageNumNote { color: var(--warn); }
+.badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--err); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.rv-page { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.rv-page.done { opacity: .6; }
+.rv-page h3 { margin: 0 0 4px; }
+.rv-page ul { margin: 4px 0; padding-left: 18px; }
+.rv-page li.review { color: var(--err); }
+.rv-page li.warn { color: var(--warn); }
+.rv-link { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.rv-link .note { color: var(--muted); }

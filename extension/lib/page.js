@@ -255,3 +255,14 @@ export function pageSave(mode) {
     poll();
   });
 }
+
+/** 같은 책의 다른 쪽으로 이동한다(검수할 때). 나가기 확인 창이 막지 않게 한다. */
+export function pageGoto(bookPage) {
+  try { window.checkUnload = false; } catch (e) { /* ignore */ }
+  try { if (window.jQuery) window.jQuery(window).off('beforeunload unload'); } catch (e) { /* ignore */ }
+  window.onbeforeunload = null;
+  const u = new URL(location.href);
+  u.searchParams.set('book_page', String(bookPage));
+  setTimeout(() => { location.href = u.href; }, 50);
+  return { ok: true, url: u.href };
+}

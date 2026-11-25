@@ -238,6 +238,7 @@ await panel.click('.tab[data-tab="advanced"]');
 assert.ok(await panel.isChecked('#pacing'), '기본으로 켜짐');
 assert.equal(await panel.inputValue('#paceMinSec'), '60');
 assert.equal(await panel.inputValue('#paceMaxSec'), '90');
+await panel.uncheck('#runThrough'); // 이 테스트는 쪽마다 멈추는 방식
 await panel.fill('#paceMinSec', '2');
 await panel.fill('#paceMaxSec', '3');
 await panel.click('#btnSaveAdvanced');

@@ -2,11 +2,11 @@
 // 사이트로는 아무것도 보내지 않는다. 저장·그림 올리기·목차는 이 컴퓨터 안에서 흉내 낸다.
 // 도우미 패널은 실제 사이트에서 쓰는 함수(lib/page.js)를 이 페이지 안에서 그대로 실행한다.
 import {
-  pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave,
+  pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
 } from '../lib/page.js';
 
 const $ = (id) => document.getElementById(id);
-const FNS = { pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave };
+const FNS = { pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto };
 const BOOK_IDX = '0';
 const K_SAVED = 'practice:saved';
 const K_CUSTOM = 'practice:custom';

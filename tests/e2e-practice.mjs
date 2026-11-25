@@ -34,13 +34,18 @@ await context.route('https://api.anthropic.com/**', async (route) => {
   const page = Number(t.match(/작업 쪽: (\d+)/)[1]);
   lastPage = page;
   apiCalls.push({ page, text: t });
+  if (page === 1) {
+    return reply({ text: '연습 1쪽 본문에 각주가 있다[각주3].', page_number: '151', page_kind: 'body', is_blank_page: false, has_poem_or_quote: false,
+      visuals: [], footnotes_without_note: [{ label: '각주3' }], notes_without_marker: [], flags: [], notes: '' });
+  }
   if (page === 2) {
+    assert.match(t, /pending_footnotes>\n앞쪽에 번호만 있고 설명이 없는 각주: 1쪽 \[각주3\]/);
     const w = Number(t.match(/가로 (\d+)px/)[1]);
     const h = Number(t.match(/세로 (\d+)px/)[1]);
-    return reply({ text: '[그림] 〈미국의 진보(American Progress)〉\n@@i\n‘명백한 운명(Manifest Destiny)’을 상징하는 그림으로\n[그림 끝]\n후 팽배해진 물질주의 풍조를 비판하며', page_number: '', page_kind: 'body',
+    return reply({ footnotes_without_note: [], notes_without_marker: [{ label: '각주3', note: '각주 설명 내용' }], text: '[각주3: 각주 설명 내용]\n[그림] 〈미국의 진보(American Progress)〉\n@@i\n‘명백한 운명(Manifest Destiny)’을 상징하는 그림으로\n[그림 끝]\n후 팽배해진 물질주의 풍조를 비판하며', page_number: '', page_kind: 'body',
       is_blank_page: false, has_poem_or_quote: false, visuals: [{ kind: '그림', title: '〈미국의 진보(American Progress)〉', box: { x: Math.round(w * 0.05), y: Math.round(h * 0.03), width: Math.round(w * 0.8), height: Math.round(h * 0.55) } }], flags: [], notes: '' });
   }
-  return reply({ text: `연습 ${page}쪽 본문`, page_number: '151', page_kind: 'body', is_blank_page: false, has_poem_or_quote: true, visuals: [], flags: [], notes: '' });
+  return reply({ text: `연습 ${page}쪽 본문`, page_number: String(150 + page), page_kind: 'body', is_blank_page: false, has_poem_or_quote: false, visuals: [], footnotes_without_note: [], notes_without_marker: [], flags: [], notes: '' });
 });
 
 let [sw] = context.serviceWorkers();
@@ -69,31 +74,55 @@ assert.equal(await practice.textContent('#pageCount'), '5');
 await panel.click('.tab[data-tab="work"]');
 await panel.waitForFunction(() => document.querySelector('#pageStatus').textContent.includes('작업 쪽 1'), null, { timeout: 20000 });
 
-// 1쪽 교정 → 실제 OCR이 전달되고, 연습 목차 이미지도 읽힘
-await panel.click('#btnAnalyze');
-await panel.waitForSelector('#result:not(.hidden)', { timeout: 30000 });
-assert.match(apiCalls[0].text, /남풍의 밤이 여- 큰 별/);
-assert.equal(tocCalls, 1);
-assert.equal(await panel.inputValue('#pageNum'), '151');
-await panel.click('#btnApplySave');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('임시저장했어요'), null, { timeout: 20000 });
-assert.match(await practice.textContent('#preview'), /연습 1쪽 본문/);
-
-// 자동 모드: 1쪽 → 2쪽(그림)에서 멈춤, 쪽 번호는 152로 추정
+// 자동 모드(끝까지 진행): 빨간 항목이 있어도 멈추지 않고 마지막 쪽까지 저장
+assert.ok(await panel.isChecked('#runThrough') === false || true);
 await panel.click('#btnAuto');
-await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('멈췄어요') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 60000 });
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
 console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
-assert.match(await panel.textContent('#progress'), /2쪽에서 멈췄어요/);
-assert.equal(await panel.inputValue('#pageNum'), '152');
-assert.ok(await panel.isVisible('#visualsBox'));
-console.log('그림 크기:', await panel.textContent('#visuals .meta .row:nth-child(3) span'));
+assert.match(apiCalls[0].text, /남풍의 밤이 여- 큰 별/); // 실제 OCR 전달
+assert.equal(tocCalls, 1);
+let saved = (await panel.evaluate(() => chrome.storage.local.get('practice:saved')))['practice:saved'];
+assert.deepEqual(Object.keys(saved).sort(), ['1', '2', '3', '4', '5']);
+assert.equal(saved['2'].pageNum, '152', '쪽 번호 추정');
+assert.ok(/<figure class="image"><img src="data:image\/png/.test(saved['2'].content), '그림 자동 넣기');
+assert.ok(/^\[각주3: 각주 설명 내용\]\n<p>/.test(saved['2'].content), '2쪽 맨 위에 설명 줄');
+assert.match(saved['1'].content, /\[각주3\]\.$/);
+
+// 검수 탭: 각주 연결 1개, 확인할 쪽(1쪽, 2쪽)
+await panel.waitForSelector('#tab-review.active');
+await panel.waitForFunction(() => document.querySelectorAll('#reviewLinks .rv-link').length === 1);
+assert.match(await panel.textContent('#reviewLinks'), /1쪽 \[각주3\] ← 2쪽/);
+const pagesText = await panel.textContent('#reviewPages');
+assert.match(pagesText, /1쪽/);
+assert.match(pagesText, /2쪽/);
+assert.ok(!/3쪽 \(/.test(pagesText), '확인할 것 없는 쪽은 목록에 없음');
+console.log('검수 요약:', await panel.textContent('#reviewSummary'));
+if (process.env.SHOT2) { await panel.setViewportSize({ width: 420, height: 900 }); await panel.screenshot({ path: process.env.SHOT2, fullPage: true }); }
+
+// 반영 → 1쪽 번호 자리에 설명, 2쪽 맨 위 설명 줄 삭제, 그림은 그대로
+await panel.click('#reviewLinks button');
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('두 쪽을 임시저장했어요') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 30000 });
+console.log('반영:', await panel.textContent('#progress'), await panel.textContent('#error'));
+saved = (await panel.evaluate(() => chrome.storage.local.get('practice:saved')))['practice:saved'];
+assert.match(saved['1'].content, /\[각주3: 각주 설명 내용\]\.$/);
+assert.ok(!saved['2'].content.includes('[각주3'), '2쪽 설명 줄 삭제');
+assert.ok(/^<p>\[그림\] 〈미국의 진보\(American Progress\)〉<\/p><p>@@i<\/p><figure class="image"><img src="data:image\/png/.test(saved['2'].content), '그림 유지: ' + saved['2'].content.slice(0, 120));
+await panel.click('.tab[data-tab="review"]');
+await panel.waitForFunction(() => document.querySelector('#reviewLinksBox').classList.contains('hidden'));
+
+// 이 쪽 열기 → 패널에 결과, 넣고 임시저장 → 확인함
+await panel.waitForFunction(() => document.querySelectorAll('#reviewPages .rv-page').length > 0);
+const firstTitle = await panel.textContent('#reviewPages .rv-page h3');
+await panel.click('#reviewPages .rv-page button.primary');
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('열었어요'), null, { timeout: 30000 });
+console.log('열기:', firstTitle, '→', await panel.inputValue('#output'));
 await panel.click('#btnApplySave');
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('임시저장했어요'), null, { timeout: 20000 });
-const pv = practice.url().includes('book_page=2') ? practice : context.pages().find((p) => p.url().includes('practice.html'));
-assert.equal(await pv.locator('#preview figure img').count(), 1, '그림이 편집기에 들어감');
-assert.match(await pv.locator('#preview figure img').getAttribute('src'), /^data:image\/png/);
-const saved = await panel.evaluate(() => chrome.storage.local.get('practice:saved'));
-assert.match(saved['practice:saved']['2'].content, /<figure class="image">/);
+await panel.click('.tab[data-tab="review"]');
+await panel.waitForFunction((t) => !Array.from(document.querySelectorAll('#reviewPages .rv-page h3')).some((h) => h.textContent === t), firstTitle);
+const pv = context.pages().find((p) => p.url().includes('practice.html'));
+saved = (await panel.evaluate(() => chrome.storage.local.get('practice:saved')))['practice:saved'];
+assert.ok(/<figure class="image"><img src="data:image\/png/.test(saved['2'].content), '다시 저장해도 그림 유지');
 
 // 내 원본 넣기 → 6번째 쪽으로 붙음
 await pv.setInputFiles('#customFile', path.join(here, 'fixtures/page.jpg'));

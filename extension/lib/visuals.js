@@ -71,6 +71,14 @@ export function buildEditorData(text, figures = []) {
   return parts.join('\n');
 }
 
+/** 편집기에 이미 들어 있는 그림들: 주소와, 넓은 그림(max-width:500px)인지 */
+export function existingFigures(html) {
+  return Array.from(String(html ?? '').matchAll(/<figure[^>]*>[\s\S]*?(<img[^>]*>)[\s\S]*?<\/figure>/gi)).map((m) => {
+    const src = (m[1].match(/\ssrc=["']([^"']+)["']/i) || [])[1] || '';
+    return { src: src.replace(/&amp;/g, '&'), width: /max-width\s*:\s*500px/i.test(m[1]) ? 501 : 0 };
+  });
+}
+
 /** 편집기에 이미 들어 있는 그림(<figure>)의 이미지 주소들 */
 export function existingFigureSrcs(html) {
   return Array.from(String(html ?? '').matchAll(/<figure[^>]*>[\s\S]*?<img[^>]*\ssrc=["']([^"']+)["'][\s\S]*?<\/figure>/gi)).map((m) => m[1]);
