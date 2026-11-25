@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "마이픽 전자도서 교정 도우미",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 줍니다.",
   "permissions": ["sidePanel", "storage", "scripting", "tabs"],
   "host_permissions": [

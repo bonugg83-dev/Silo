@@ -57,3 +57,29 @@ textarea { width: 100%; min-height: 360px; resize: vertical; font-size: 13.5px; 
 details > summary { cursor: pointer; font-weight: 600; }
 #liveWarn { color: var(--warn); margin-top: 4px; }
 #tocText { min-height: 200px; font-size: 12.5px; }
+h3 { font-size: 13px; margin: 10px 0 6px; }
+.sub { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 4px; }
+.sub input { width: 100%; margin: 4px 0; }
+.small-btn { padding: 3px 8px; font-size: 12.5px; }
+.key-row { display: flex; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.key-row input[type=text] { flex: 1; min-width: 0; }
+.key-row code { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.output-view { white-space: pre-wrap; font-size: 13.5px; line-height: 1.7; border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 120px; max-height: 60vh; overflow: auto; }
+.output-view mark { background: var(--err-bg); color: var(--err); border-bottom: 2px solid var(--err); cursor: help; padding: 0 1px; }
+.output-view mark.warn { background: var(--warn-bg); color: var(--warn); border-bottom-color: var(--warn); }
+.output-view .blk { color: var(--primary); }
+.visual { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.visual img { width: 96px; max-height: 120px; object-fit: contain; background: #fff; border: 1px solid var(--line); }
+.visual .meta { display: flex; flex-direction: column; gap: 4px; }
+.visual .meta .row { margin: 0; flex-wrap: wrap; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10; display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 10px; }
+.modal-body { background: var(--card); border-radius: 8px; padding: 10px; width: 100%; }
+.crop-stage { position: relative; user-select: none; touch-action: none; }
+.crop-stage img { width: 100%; display: block; }
+.crop-box { position: absolute; border: 2px solid #ef4444; background: rgba(239,68,68,.12); cursor: move; }
+.crop-box .h { position: absolute; width: 14px; height: 14px; background: #ef4444; border-radius: 2px; }
+.crop-box .nw { left: -8px; top: -8px; cursor: nwse-resize; }
+.crop-box .ne { right: -8px; top: -8px; cursor: nesw-resize; }
+.crop-box .sw { left: -8px; bottom: -8px; cursor: nesw-resize; }
+.crop-box .se { right: -8px; bottom: -8px; cursor: nwse-resize; }
+#pageNumNote { color: var(--warn); }

@@ -24,7 +24,7 @@ export const SYSTEM_PROMPT = `당신은 실로암시각장애인복지관 "마�
 - 줄표(대시)는 ―(U+2015). 줄표 앞뒤는 붙여 씁니다(예: "밤이여―오라"). 붙임표/하이픈은 자판 -. 한자 一과 줄표를 구분하세요.
 - 빼기는 −(U+2212), 곱하기 ×(U+00D7), 나누기 ÷(U+00F7). +와 =는 자판. 한자 十과 +를 구분하세요.
 - 제목 등을 묶는 산괄호는 〈 〉(U+3008/3009), 이중산괄호 《 》(U+300A/300B). 부등호는 ＜ ＞(U+FF1C/FF1E). 자판 < > 는 절대 쓰지 않습니다.
-- 낫표 「 」, 겹낫표 『 』. 여는 기호와 닫는 기호의 짝을 반드시 맞춥니다(『...』, 「...」, 〈...〉). 묶음 기호 안쪽에는 공백을 넣지 않습니다(『맛있는 포도』). 문장 안에서 여는 묶음 기호(〈 《 「 『) 앞은 한 칸 띄웁니다.
+- 낫표 「 」(한 줄 획, 글·논문·시·노래 제목), 겹낫표 『 』(두 줄 획, 책·신문 제목). 종류는 OCR이 아니라 원본 이미지의 획 모양으로 구분하세요. OCR은 「」와 『』를 자주 바꿔 읽습니다. 여는 기호와 닫는 기호의 짝을 맞추되, 원본에서 한쪽만 또렷하면 또렷한 쪽에 맞추세요(OCR이 틀리게 읽은 쪽에 맞추지 마세요). 둘 다 애매하면 원본에 가장 가까운 대로 두고 flags에 quote와 함께 적으세요. 묶음 기호 안쪽에는 공백을 넣지 않습니다(『맛있는 포도』). 문장 안에서 여는 묶음 기호(〈 《 「 『) 앞은 한 칸 띄웁니다.
 - 쌍점(:)과 쌍반점(;)은 앞은 붙이고 뒤는 한 칸 띄웁니다(시각 10:30 같은 숫자는 예외).
 - 가운뎃점은 원본 모양과 상관없이 ·(U+00B7), 앞뒤를 붙입니다.
 - 말줄임표는 원본 모양과 개수 그대로: 원본이 유니코드 말줄임표(…)면 …(U+2026), 마침표를 찍은 것(......)이면 자판 마침표.
@@ -58,13 +58,23 @@ export const SYSTEM_PROMPT = `당신은 실로암시각장애인복지관 "마�
 - 성경의 작은 장·절 숫자는 주석이 아닙니다.
 - 주석 처리는 사람이 꼭 확인해야 하므로 flags에 kind "footnote"로 남기세요.
 
-## 시각자료(그림, 사진, 지도, 그래프, 글상자, 표)
-- 형식: "[그림]" ... "[그림 끝]" (사진/지도/그래프/글상자/표도 같은 방식). 원본에 번호·제목이 있으면 "[그림 2-4] 제목"처럼 같은 줄에 씁니다. 그림·사진·지도·그래프는 유형 다음 줄에 "@@i"를 넣고, 그다음 줄부터 이미지 안의 글자 설명, 캡션을 씁니다. 이미지 자체는 봉사자가 이미지 자르기 도구로 넣으므로 "@@i" 줄만 남겨 두세요.
+## 시각자료(그림, 사진, 그래프, 도표, 지도, 글상자, 표)
+- 형식: "[종류]" ... "[종류 끝]". 종류는 원본에 적힌 이름을 따르되, 이미지로 넣는 것은 그림/사진/그래프/도표/지도 중 하나로 씁니다.
+- 그림·사진·그래프·도표·지도: 첫 줄 "[종류] 제목", 다음 줄 "@@i", 그다음 줄부터 이미지 안의 글자와 설명(캡션), 마지막 줄 "[종류 끝]". 이미지는 프로그램이 잘라 넣으므로 "@@i" 줄만 둡니다.
+- 제목: 그 시각자료의 제목이나 번호(예: "그림 2-4", "<사진 1> 호손의 생가")가 있으면 "[종류] 제목"처럼 종류 옆 같은 줄에 둡니다. 무엇이 제목이고 무엇이 설명인지는 글자 색·크기 같은 고정 규칙으로 정하지 말고, 그 쪽의 내용과 배치를 보고 매번 판단하세요. 제목과 같은 뜻의 영문이 함께 있으면 소괄호로 묶습니다. 애매하면 가장 그럴듯하게 쓰고 flags(kind "visual")에 quote와 함께 적으세요. 제목이 없으면 "[종류]"만 씁니다.
 - 그래프는 가로축·세로축·수치를 텍스트로("2004: 1,273"). 지도는 제목과 중요한 정보만.
-- 글상자는 [글상자] 제목 ... [글상자 끝]. 표는 [표] 제목, 다음 줄 "@@t", 행마다 셀을 공백으로 구분해 한 줄씩, 빈 셀은 "--", 그다음 "t@@", 표 밖 출처·설명, "[표 끝]". (실제 표 셀 그리기는 봉사자가 하므로 내용을 정확히 옮기는 데 집중하세요.)
+- 글상자는 [글상자] 제목 ... [글상자 끝]. 표는 [표] 제목, 다음 줄 "@@t", 행마다 셀을 공백으로 구분해 한 줄씩, 빈 셀은 "--", 그다음 "t@@", 표 밖 출처·설명, "[표 끝]". (표 셀 그리기는 봉사자가 합니다.)
 - 시각자료는 문장 중간에 넣지 않습니다. 같은 쪽 안에서 문단과 문단 사이로 옮기고, 문단이 쪽 안에서 끝나지 않으면 문장 단위로 끊고 그 사이에 넣습니다. 문장 단위로도 끊을 수 없으면 원위치에 넣습니다.
 - 본문과 무관한 장식 그림은 넣지 않습니다. [그림]/[그림 끝] 앞뒤에 빈 줄을 넣지 않습니다.
-- 시각자료가 있는 쪽은 반드시 flags에 kind "visual", needs_review true로 남기세요(이미지 삽입·표 그리기는 사람이 해야 함).
+- visuals: "@@i"가 있는 블록마다 하나씩, text에 나오는 순서대로 적습니다. kind(그림/사진/그래프/도표/지도), title(종류 옆에 쓴 제목, 없으면 빈 문자열), box(원본 이미지에서 그 시각자료가 차지하는 영역, 픽셀 좌표 x, y, width, height). 좌표는 요청에 적힌 이미지 크기 기준이며, 그림 자체만 감싸고 본문 글자·캡션은 넣지 않습니다(그래프 축 글자처럼 그림 안의 글자는 포함).
+- 표와 글상자는 이미지로 넣지 않으므로 visuals에 넣지 않고, 표가 있으면 flags(kind "visual", needs_review true)에 "표 그리기 필요"를 남깁니다.
+
+## 특수한 쪽 (page_kind)
+- 장·부 표지(장 번호와 제목만 크게 있는 쪽): 제목 한 줄만 목차 단계 표시와 함께 씁니다(예: "@@[3 아메리칸 르네상스"). 같은 뜻의 영문 병기는 소괄호로 묶고, 장식 문구·장식 그림은 넣지 않습니다. page_kind "chapter_cover".
+- 사진·그림만 있는 쪽: 시각자료 블록만 씁니다(예: "[사진] 제목", "@@i", 설명, "[사진 끝]"). page_kind "visual_only".
+- 내용이 없거나 장식 문구만 있는 쪽: "빈 면" 한 줄. page_kind "blank".
+- 차례 페이지 "toc", 미주 설명 페이지 "endnotes", 색인·광고 "index_ad", 일반 본문 "body".
+- 쪽 번호가 인쇄돼 있지 않으면 page_number는 빈 문자열로 둡니다(프로그램이 앞뒤 쪽으로 추정합니다).
 
 ## 시
 - 연과 행은 원본과 똑같이 줄을 바꿉니다. 연 사이에는 빈 줄 한 줄. 시 제목 아래 빈 줄 한 줄(제목 바로 밑 작가 이름은 제목 아래 붙여 씀).
@@ -92,30 +102,50 @@ export const SYSTEM_PROMPT = `당신은 실로암시각장애인복지관 "마�
 
 ## 출력
 지정된 JSON 형식으로만 답하세요.
-- text: 편집기에 넣을 최종 텍스트(줄바꿈은 \\n).
+- text: 편집기에 넣을 최종 텍스트(줄바꿈은 \n).
 - page_number: 원본에 인쇄된 쪽 번호(없으면 빈 문자열).
-- is_blank_page, has_poem_or_quote: 해당 여부.
-- flags: 사람이 확인해야 할 것. needs_review가 true인 항목이 하나라도 있으면 자동 모드가 멈춥니다. 단순히 고친 내역은 flags가 아니라 notes에 적습니다. 확실한 쪽에서 불필요하게 needs_review를 켜지 마세요.
+- page_kind, is_blank_page, has_poem_or_quote: 해당 여부.
+- visuals: 위 시각자료 규칙대로.
+- flags: 사람이 확인해야 할 것. quote에는 text 안에서 그 위치를 가리키는 짧은 구절을 text와 글자 하나 다르지 않게 적습니다(위치가 없으면 빈 문자열). needs_review가 true인 항목이 하나라도 있으면 자동 모드가 멈춥니다. 단순히 고친 내역은 flags가 아니라 notes에 적습니다. 확실한 쪽에서 불필요하게 needs_review를 켜지 마세요.
 - notes: OCR 대비 주요 수정 내용을 한국어로 짧게(최대 5줄).`;
-
 export const RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['text', 'page_number', 'is_blank_page', 'has_poem_or_quote', 'flags', 'notes'],
+  required: ['text', 'page_number', 'page_kind', 'is_blank_page', 'has_poem_or_quote', 'visuals', 'flags', 'notes'],
   properties: {
     text: { type: 'string' },
     page_number: { type: 'string' },
+    page_kind: { type: 'string', enum: ['body', 'chapter_cover', 'visual_only', 'blank', 'toc', 'endnotes', 'index_ad', 'other'] },
     is_blank_page: { type: 'boolean' },
     has_poem_or_quote: { type: 'boolean' },
+    visuals: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'title', 'box'],
+        properties: {
+          kind: { type: 'string', enum: ['그림', '사진', '그래프', '도표', '지도'] },
+          title: { type: 'string' },
+          box: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['x', 'y', 'width', 'height'],
+            properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } },
+          },
+        },
+      },
+    },
     flags: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['kind', 'message', 'needs_review'],
+        required: ['kind', 'message', 'quote', 'needs_review'],
         properties: {
           kind: { type: 'string', enum: ['visual', 'footnote', 'heading', 'uncertain_text', 'layout', 'other'] },
           message: { type: 'string' },
+          quote: { type: 'string' },
           needs_review: { type: 'boolean' },
         },
       },
@@ -138,6 +168,7 @@ export function buildWriteMessage(ctx) {
   t += section('previous_page_ending', ctx.prevTail);
   t += section('page_info', `작업 쪽: ${ctx.currPage}\n편집 화면 쪽 번호 칸: ${ctx.pageField || '(비어 있음)'}${ctx.pageTotal ? `\n배정 범위: ${ctx.pageTotal}` : ''}`);
   t += section('ocr_text', ctx.ocrText || '(OCR 텍스트 없음)');
+  t += section('image_size', `원본 이미지 크기: 가로 ${ctx.imageWidth}px, 세로 ${ctx.imageHeight}px (visuals의 box 좌표 기준)`);
   t += section('dash_spacing', ctx.dashSpacing === 'keep'
     ? '이 책은 줄표 앞뒤 띄어쓰기를 원본대로 유지합니다.'
     : '줄표(―) 앞뒤는 붙여 씁니다.');
@@ -145,18 +176,39 @@ export function buildWriteMessage(ctx) {
   return t;
 }
 
-/** 2차 검증 요청 본문 */
-export function buildVerifyMessage(ctx, draft, diffs) {
+/** 2차 검증: OCR과 다른 곳만 원본으로 다시 보고, 고칠 곳만 답한다 */
+export const VERIFY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['fixes', 'flags'],
+  properties: {
+    fixes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['find', 'replace', 'reason'],
+        properties: {
+          find: { type: 'string' },
+          replace: { type: 'string' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+    flags: RESULT_SCHEMA.properties.flags,
+  },
+};
+
+export function buildVerifyMessage(ctx, draftText, diffs) {
   let t = '';
   t += section('production_tip', ctx.tip);
-  t += section('page_info', `작업 쪽: ${ctx.currPage}`);
   t += section('dash_spacing', ctx.dashSpacing === 'keep' ? '줄표 앞뒤 띄어쓰기는 원본대로 유지.' : '줄표(―) 앞뒤는 붙여 씀.');
-  t += section('draft_text', draft.text);
+  t += section('draft_text', draftText);
   const list = diffs.map((d, i) => `${i + 1}. OCR: “${d.ocr || '(없음)'}” / 초안: “${d.result || '(없음)'}”`).join('\n');
-  t += section('ocr_vs_draft_differences', list || '(차이 없음)');
-  t += '위 원본 이미지와 초안을 비교해 검수하세요. OCR과 초안이 다른 곳은 이미지를 다시 보고 어느 쪽이 맞는지 확인하세요(OCR이 맞을 때도 있음). '
-    + '빠진 문장·줄, 잘못 읽은 글자, 부호(따옴표·줄표·괄호 짝), 띄어쓰기, 제목 단계, 각주·시각자료 처리를 모두 점검하고, 고친 최종본 전체를 같은 JSON 형식으로 답하세요. '
-    + 'notes에는 검수에서 바꾼 것만 적으세요.';
+  t += section('ocr_vs_draft_differences', list);
+  t += '2차 검수입니다. 위 목록은 OCR과 초안이 다른 곳입니다. 각 곳을 원본 이미지에서 다시 보고 초안이 맞는지 확인하세요(OCR이 맞을 때도 있고, 둘 다 틀릴 때도 있음). '
+    + '초안 전체를 다시 쓰지 말고, 고쳐야 할 곳만 fixes로 답하세요. find는 초안에서 정확히 한 번만 나오는 구절(앞뒤 글자를 조금 포함해 유일하게)로, replace는 바꿀 내용으로 씁니다. '
+    + '맞는 곳은 답하지 않습니다. 고칠 곳이 없으면 fixes를 빈 배열로 답하세요. 확인했지만 원본으로도 판단할 수 없는 곳만 flags에 quote와 함께 남기세요.';
   return t;
 }
 

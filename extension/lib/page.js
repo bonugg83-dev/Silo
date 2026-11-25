@@ -144,6 +144,44 @@ export async function pageFetchToc(bookIdx) {
   }
 }
 
+/** 이미지 자르기 창이 쓰는 원본(고해상도) 쪽 이미지를 가져온다. */
+export async function pageFetchOriginal(bookIdx, fnum) {
+  try {
+    const url = '/upload/book/file.php?book_idx=' + encodeURIComponent(bookIdx) + '&fnum=' + encodeURIComponent(fnum) + '&type=u';
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+    const blob = await res.blob();
+    if (!/^image\//.test(blob.type) && blob.size < 2000) return { ok: false, error: '이미지가 아니에요' };
+    const dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+    return { ok: true, dataUrl };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/** 잘라낸 그림을 사이트의 이미지 자르기 창과 같은 방식으로 올린다. */
+export async function pageUploadCrop(dataUrl, bookIdx, fnum) {
+  try {
+    const fd = new FormData();
+    fd.append('crop_file', dataUrl);
+    fd.append('book_idx', String(bookIdx));
+    fd.append('fnum', String(fnum));
+    const res = await fetch('/module/book/cropbox_upload_proc.php', { method: 'POST', body: fd, credentials: 'include' });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { return { ok: false, error: '업로드 응답을 읽지 못했어요' }; }
+    if (data.result == 200 && data.img_path) return { ok: true, src: data.img_path };
+    return { ok: false, error: data.message || ('업로드 실패(' + data.result + ')') };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 /** 편집기에 내용과 쪽 번호를 넣는다. data는 "줄<br>\n줄" 형식. */
 export function pageApply(data, pageNum, nonePage) {
   return new Promise((resolve) => {

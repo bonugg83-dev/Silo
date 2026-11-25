@@ -81,3 +81,11 @@ test('시각자료 짝', () => {
   assert.equal(applyRules('[표 2-1] 사회적 경제\n@@t\n가 나\nt@@\n[표 끝]').warnings.length, 0);
   assert.ok(applyRules('[사진]\n@@i').warnings.some((w) => w.rule === '시각자료'));
 });
+
+test('짝 검사: 낫표·산괄호만', () => {
+  // 쪽을 넘어 이어지는 소괄호·따옴표는 경고하지 않음
+  assert.equal(applyRules('그는 “안녕(하세요').warnings.filter((w) => w.rule === '괄호 짝').length, 0);
+  assert.ok(applyRules('『주홍글씨」를 읽었다').warnings.some((w) => w.rule === '괄호 짝' && /『/.test(w.message)));
+  assert.ok(applyRules('「인간·종교·국가』').warnings.some((w) => w.rule === '괄호 짝'));
+  assert.equal(applyRules('『주홍글씨』와 「큰 바위 얼굴」').warnings.length, 0);
+});

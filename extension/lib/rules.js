@@ -36,9 +36,9 @@ const UNITS = [
 
 const VALID_MARKERS = ['@@[', '@@{', '@@(', '@@H4(', '@@H5(', '@@i', '@@t', 't@@'];
 
+// 짝 검사는 낫표·산괄호만 (소괄호·대괄호·따옴표는 쪽을 넘어 이어지는 일이 많아 오탐이 잦음)
 const PAIRS = [
   ['『', '』', '겹낫표'], ['「', '」', '낫표'], ['〈', '〉', '산괄호'], ['《', '》', '이중산괄호'],
-  ['(', ')', '소괄호'], ['[', ']', '대괄호'], ['“', '”', '큰따옴표'], ['‘', '’', '작은따옴표'],
 ];
 
 function countMatches(str, re) {
@@ -211,9 +211,14 @@ export function applyRules(input, opts = {}) {
       warnings.push({ rule: '괄호 짝', message: `${name} ${open}${close} 짝이 안 맞아요 (여는 것 ${a}개, 닫는 것 ${b}개). 쪽을 넘어 이어지는 경우가 아니면 확인하세요.` });
     }
   }
-  // 서로 다른 기호로 닫힌 경우: 『...> 『...) 『...’
-  const mismatch = text.match(/『[^『』\n]{0,80}?[」〉》)’”](?![^『\n]*』)/);
-  if (mismatch) warnings.push({ rule: '괄호 짝', message: `여는 기호와 닫는 기호가 달라요: “${mismatch[0].slice(0, 40)}”` });
+  // 서로 다른 기호로 닫힌 경우: 『...」, 「...』, 〈...》 등 (안쪽에 다른 여는 기호가 없을 때)
+  const CLOSERS = { '『': '』', '「': '」', '〈': '〉', '《': '》' };
+  const mixRe = /([『「〈《])([^『』「」〈〉《》\n]{0,80}?)([』」〉》])/g;
+  for (const m of text.matchAll(mixRe)) {
+    if (CLOSERS[m[1]] !== m[3]) {
+      warnings.push({ rule: '괄호 짝', quote: m[0].slice(0, 40), message: `여는 기호(${m[1]})와 닫는 기호(${m[3]})가 달라요: “${m[0].slice(0, 40)}”. 원본에서 어느 쪽이 맞는지 확인하세요.` });
+    }
+  }
 
   if (new RegExp(`[${HANGUL}] - [${HANGUL}]`).test(text)) {
     warnings.push({ rule: '줄표/붙임표', message: '한글 사이에 띄어 쓴 하이픈( - )이 있어요. 줄표(―)인지 확인하세요.' });
