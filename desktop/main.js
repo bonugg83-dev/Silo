@@ -8,7 +8,7 @@
 //
 // 확장 코드는 고치지 않는다. 확장이 쓰는 chrome.* 기능은 preload-shim.js 가 같은 이름으로
 // 흉내 내고, 실제 일은 이 파일(메인 프로세스)이 한다.
-const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, session, net, shell } = require('electron');
+const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, session, net, shell, clipboard, webContents: allWebContents } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -28,6 +28,7 @@ const UI_DIR = path.join(__dirname, 'ui');
 const SITE_HOME = 'https://www.mypickebook.org/';
 const APP_PARTITION = 'persist:silo'; // 패널, 위쪽 막대, 연습 페이지
 const BAR_H = 48;
+const STRIP_H = 38; // 사이트 창이 여러 개일 때 그 아래 창 목록 줄
 const DIVIDER_W = 6;
 const PANEL_MIN = 360;
 const PANEL_MAX = 900;
@@ -122,7 +123,9 @@ let win, barView, siteView, dividerView, panelView;
 let shimPrefs;
 
 function windowOf(wc) {
-  return BrowserWindow.fromWebContents(wc) || (siteView && wc === siteView.webContents ? win : null);
+  if (siteView && wc === siteView.webContents) return win;
+  if (popups.some((p) => p.wc === wc)) return win;
+  return BrowserWindow.fromWebContents(wc);
 }
 function tabInfo(wc) {
   if (!wc || wc.isDestroyed()) return null;
@@ -130,7 +133,7 @@ function tabInfo(wc) {
   return {
     id: wc.id, url: wc.getURL(), title: wc.getTitle(),
     status: wc.isLoading() ? 'loading' : 'complete',
-    active: wc === siteView?.webContents || (w !== win && !!w?.isFocused()),
+    active: shownPopup ? wc.id === shownPopup : wc === siteView?.webContents,
     windowId: w ? w.id : -1,
   };
 }
@@ -151,24 +154,75 @@ function registerTab(wc, partition) {
   wc.on('did-start-loading', () => broadcast('tabs:updated', id, { status: 'loading' }, tabInfo(wc)));
   wc.on('did-stop-loading', () => {
     broadcast('tabs:updated', id, { status: 'complete', url: wc.getURL() }, tabInfo(wc));
-    if (wc === siteView?.webContents) sendBar();
+    sendBar();
   });
   wc.on('did-navigate', () => wc === siteView?.webContents && sendBar());
   wc.on('did-navigate-in-page', () => wc === siteView?.webContents && sendBar());
   wc.on('focus', () => broadcast('tabs:activated', { tabId: id, windowId: tabInfo(wc)?.windowId ?? -1 }));
-  wc.once('destroyed', () => { tabs.delete(id); shimmed.delete(wc); });
+  wc.once('destroyed', () => { tabs.delete(id); shimmed.delete(wc); if (!quitting) setImmediate(sendBar); });
   if (!partition) return; // 연습 페이지 창
   // 사이트가 여는 창(편집하기 → 편집 화면 팝업/새 탭)은 같은 로그인으로 열고 탭으로 등록한다
+  // 사이트는 빈 창(about:blank)을 먼저 열고 그 창에 주소를 넣거나 폼을 보내기도 하므로 빈 창도 허용한다.
+  // 막는 것은 앱 내부 주소와 파일뿐.
+  // 팝업은 따로 뜨는 창이 아니라 앱 안 왼쪽 칸에 겹쳐 띄우고, 위쪽 창 목록 줄에서 내리거나 닫는다.
   wc.setWindowOpenHandler(({ url }) => {
-    if (!/^https?:/.test(url)) return { action: 'deny' };
-    return { action: 'allow', overrideBrowserWindowOptions: siteWindowOptions(partition) };
+    if (/^(silo|file|devtools|chrome|chrome-extension):/i.test(url)) return { action: 'deny' };
+    return {
+      action: 'allow',
+      createWindow: (options) => openInAppPopup(options, partition),
+    };
   });
   wc.on('did-create-window', (child) => registerTab(child.webContents, partition));
 }
 
+// ---------- 앱 안 팝업 창 ----------
+const popups = []; // { view, wc, opener }
+let shownPopup = null; // 지금 왼쪽 칸에 보이는 팝업의 webContents id (null 이면 마이픽 화면)
+function openInAppPopup(options, partition) {
+  const view = new WebContentsView({
+    webContents: options.webContents,
+    webPreferences: { ...(options.webPreferences || {}), partition, contextIsolation: true, sandbox: true },
+  });
+  view.setBackgroundColor('#ffffff');
+  const wc = view.webContents;
+  popups.push({ view, wc });
+  win.contentView.addChildView(view, win.contentView.children.indexOf(panelView));
+  registerTab(wc, partition);
+  shownPopup = wc.id;
+  const remove = () => {
+    const i = popups.findIndex((p) => p.wc === wc);
+    if (i < 0) return;
+    popups.splice(i, 1);
+    try { win.contentView.removeChildView(view); } catch {}
+    if (shownPopup === wc.id) shownPopup = popups.at(-1)?.wc.id ?? null;
+    if (!quitting) layout();
+  };
+  wc.once('destroyed', remove);
+  // 사이트가 window.close() 로 스스로 닫는 경우도 webContents 가 없어지면서 'destroyed' 로 정리된다
+  wc.on('page-title-updated', () => sendBar());
+  setImmediate(layout);
+  return wc;
+}
+function closePopup(id) {
+  const p = popups.find((x) => x.wc.id === id);
+  if (!p) return;
+  if (!p.wc.isDestroyed()) p.wc.close({ waitForBeforeUnload: false });
+}
+function closeAllPopups() {
+  for (const p of [...popups]) closePopup(p.wc.id);
+}
+// 왼쪽 칸에 지금 보이는 사이트 화면 (팝업 또는 마이픽)
+function currentWc() {
+  return popups.find((p) => p.wc.id === shownPopup && !p.wc.isDestroyed())?.wc || siteView.webContents;
+}
+function showPopup(id) {
+  shownPopup = popups.some((p) => p.wc.id === id) ? id : null;
+  layout();
+}
+
 ipcMain.handle('tabs:query', (_e, q = {}) => {
   let list = [...tabs.values()].filter((wc) => !wc.isDestroyed());
-  if (q.active) list = [siteView.webContents];
+  if (q.active) list = [popups.find((p) => p.wc.id === shownPopup)?.wc || siteView.webContents];
   const pats = q.url ? [].concat(q.url).map((p) => new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$')) : null;
   return list.map(tabInfo).filter((t) => t && (!pats || pats.some((r) => r.test(t.url))));
 });
@@ -195,7 +249,7 @@ ipcMain.handle('tabs:update', (_e, id, props = {}) => {
   const wc = tabs.get(id);
   if (!wc || wc.isDestroyed()) throw new Error(`No tab with id: ${id}.`);
   if (props.url) wc.loadURL(props.url);
-  if (props.active) windowOf(wc)?.focus();
+  if (props.active) { if (popups.some((p) => p.wc === wc)) showPopup(wc.id); else if (wc === siteView.webContents) showPopup(null); else windowOf(wc)?.focus(); }
   return tabInfo(wc);
 });
 ipcMain.handle('windows:update', (_e, id, props = {}) => {
@@ -227,6 +281,38 @@ ipcMain.handle('runtime:send', (e, msg) => new Promise((resolve) => {
   for (const wc of targets) wc.send('runtime:message', id, msg);
 }));
 ipcMain.on('runtime:response', (_e, id, r) => pending.get(id)?.(r));
+// Claude API: 패널 대신 앱 본체가 보낸다 (preload-shim.js 의 fetch 참고)
+const apiCalls = new Map();
+const netLog = [];
+function logNet(line) {
+  netLog.push(`${new Date().toLocaleTimeString('sv')} ${line}`);
+  if (netLog.length > 30) netLog.shift();
+}
+ipcMain.handle('api:fetch', async (e, id, url, { method, headers, body }) => {
+  if (!shimmed.has(e.sender) || !/^https:\/\/api\.anthropic\.com\//.test(url)) return { error: 'blocked' };
+  const ctl = new AbortController();
+  apiCalls.set(id, ctl);
+  try {
+    const res = await e.sender.session.fetch(url, { method, headers, body, signal: ctl.signal });
+    const text = await res.text();
+    if (!res.ok) logNet(`API ${res.status} ${text.slice(0, 160)}`);
+    return { status: res.status, statusText: res.statusText, headers: [...res.headers.entries()], body: text };
+  } catch (err) {
+    if (ctl.signal.aborted) return { aborted: true };
+    logNet(`API 연결 실패 ${err.message}`);
+    return { error: err.message || String(err) };
+  } finally {
+    apiCalls.delete(id);
+  }
+});
+ipcMain.on('api:abort', (_e, id) => apiCalls.get(id)?.abort());
+
+let splashShown = false;
+ipcMain.on('splash:first', (e) => {
+  const first = !splashShown && e.sender === panelView?.webContents;
+  if (first) splashShown = true;
+  e.returnValue = first;
+});
 ipcMain.on('shim:hello', (e) => {
   shimmed.add(e.sender);
   e.sender.once('destroyed', () => shimmed.delete(e.sender));
@@ -234,6 +320,7 @@ ipcMain.on('shim:hello', (e) => {
 
 // ---------- 배치 ----------
 let panelHidden = false;
+let quitting = false;
 let reviewOpen = false;
 let authOpen = false;   // 확장의 로그인/회원가입 화면이 떠 있음 → 로그인 전에는 패널만 창 전체로
 let splashOpen = false; // 시작 모션 → 창 전체에서 재생
@@ -243,7 +330,8 @@ function layout() {
   if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
   const full = reviewOpen || authOpen || splashOpen;
-  const top = authOpen || splashOpen ? 0 : BAR_H; // 시작 모션과 로그인 화면에서는 위쪽 막대도 숨김
+  const strip = !full && popups.length ? STRIP_H : 0; // 창 목록 줄
+  const top = authOpen || splashOpen ? 0 : BAR_H + strip; // 시작 모션과 로그인 화면에서는 위쪽 막대도 숨김
   const ch = Math.max(0, h - top);
   barView.setBounds({ x: 0, y: 0, width: w, height: top });
   if (full) {
@@ -262,26 +350,69 @@ function layout() {
     panelView.setBounds({ x: w - pw, y: top, width: pw, height: ch });
     dividerView.setBounds(dragging ? { x: 0, y: top, width: w, height: ch } : { x: sx, y: top, width: DIVIDER_W, height: ch });
   }
+  // 왼쪽 칸: 보이는 팝업이 있으면 그 창을 마이픽 화면 위에 겹쳐 보여 줌
+  const shown = !full && popups.find((p) => p.wc.id === shownPopup);
+  const sb = siteView.getBounds();
+  for (const p of popups) {
+    const on = p === shown;
+    p.view.setVisible(on);
+    p.view.setBounds(on ? sb : { x: 0, y: top, width: 0, height: 0 });
+  }
+  siteView.setVisible(!shown);
   sendBar();
 }
 function sendBar() {
-  if (!barView || barView.webContents.isDestroyed() || !siteView) return;
-  const wc = siteView.webContents;
+  if (!barView || barView.webContents.isDestroyed() || !siteView || siteView.webContents.isDestroyed()) return;
+  const wc = currentWc();
   barView.webContents.send('bar:state', {
     url: wc.getURL(), title: wc.getTitle(),
     canBack: wc.navigationHistory.canGoBack(), canForward: wc.navigationHistory.canGoForward(),
     panelHidden, reviewOpen, authOpen, splashOpen, profile: currentProfile,
+    editors: editorTabs().map((t) => (t.url.match(/[?&]book_page=(\d+)/) || [])[1] || ''),
+    popups: popups.filter((p) => !p.wc.isDestroyed()).map((p) => ({ id: p.wc.id, title: popupTitle(p.wc), shown: p.wc.id === shownPopup })),
+    siteTitle: siteView.webContents.getTitle(),
   });
 }
+function popupTitle(wc) {
+  const u = wc.getURL();
+  if (isEditorUrl(u)) { const n = (u.match(/[?&]book_page=(\d+)/) || [])[1]; return n ? `편집 화면 ${n}쪽` : '편집 화면'; }
+  const t = wc.getTitle();
+  return t && !/^(https?:|about:)/.test(t) ? t : '새 창';
+}
+const isEditorUrl = (u) => /mypickebook\.org\/making\/make_book\.html/.test(u || '');
+function editorTabs() {
+  return [...tabs.values()].filter((wc) => !wc.isDestroyed() && !shimmed.has(wc)).map(tabInfo).filter((t) => t && isEditorUrl(t.url));
+}
 
-ipcMain.on('bar:cmd', (_e, cmd) => {
-  const wc = siteView.webContents;
+// 연결 정보: 앱이 아는 창·탭과 그 안의 프레임 주소를 클립보드로 (팝업을 못 찾을 때 원인 찾기용)
+function diagnostics() {
+  const lines = [`Silo 데스크톱 ${app.getVersion()} · Electron ${process.versions.electron} · ${process.platform}`,
+    `확장 ${EXT_DIR}`, `사이트 로그인 칸 ${partitionFor(currentProfile)}`, ''];
+  for (const wc of allWebContents.getAllWebContents()) {
+    if (wc.isDestroyed()) continue;
+    const kind = wc === siteView?.webContents ? '왼쪽 사이트' : wc === panelView?.webContents ? '패널'
+      : shimmed.has(wc) ? '앱 화면' : tabs.has(wc.id) ? '사이트 창' : '등록 안 됨';
+    lines.push(`[${wc.id}] ${kind} · ${wc.getType()} · ${wc.getURL() || '(빈 주소)'}${isEditorUrl(wc.getURL()) ? '  ← 편집 화면' : ''}`);
+    try {
+      for (const f of wc.mainFrame.framesInSubtree) if (f !== wc.mainFrame) lines.push(`     프레임 ${f.name || ''} ${f.url}`);
+    } catch {}
+  }
+  lines.push('', '최근 연결 오류:', ...(netLog.length ? netLog : ['(없음)']));
+  return lines.join('\n');
+}
+
+ipcMain.on('bar:cmd', (_e, cmd, arg) => {
+  const wc = currentWc();
   if (cmd === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   if (cmd === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   if (cmd === 'reload') wc.reload();
-  if (cmd === 'home') wc.loadURL(SITE_HOME);
+  if (cmd === 'home') { showPopup(null); siteView.webContents.loadURL(SITE_HOME); }
   if (cmd === 'practice') openPracticeWindow('silo://ext/practice/practice.html?idx=0&book_page=1');
   if (cmd === 'togglePanel') { panelHidden = !panelHidden; layout(); }
+  if (cmd === 'showSite') showPopup(null);
+  if (cmd === 'showPopup') showPopup(arg);
+  if (cmd === 'closePopup') closePopup(arg);
+  if (cmd === 'diagnostics') { clipboard.writeText(diagnostics()); barView.webContents.send('bar:toast', '연결 정보를 복사했어요. 채팅에 붙여 넣어 주세요.'); }
 });
 ipcMain.on('divider:drag', (_e, phase, x) => {
   if (phase === 'start') { dragging = true; win.contentView.addChildView(dividerView); layout(); return; }
@@ -297,9 +428,22 @@ ipcMain.on('layout:mode', (e, mode) => {
   layout();
 });
 
+// 연결 오류를 진단 정보에 남긴다 (광고·통계처럼 막혀도 되는 요청은 빼고)
+function watchNetErrors(ses, label) {
+  ses.webRequest.onErrorOccurred((d) => {
+    if (d.error === 'net::ERR_ABORTED' || d.resourceType === 'image' && !/mypickebook/.test(d.url)) return;
+    if (!/mypickebook|anthropic/.test(d.url)) return;
+    logNet(`${label} ${d.method} ${d.url.slice(0, 120)} → ${d.error}`);
+  });
+}
+
 // ---------- 프로필 바꾸기: 사이트 화면을 그 사람의 로그인으로 다시 만든다 ----------
+const sitePartitions = new Map(); // session -> partition 이름
 function makeSiteView(profileId) {
   const partition = partitionFor(profileId);
+  const ses = session.fromPartition(partition);
+  if (!sitePartitions.has(ses)) watchNetErrors(ses, '사이트');
+  sitePartitions.set(ses, partition);
   const v = new WebContentsView({ webPreferences: { partition, contextIsolation: true, sandbox: true } });
   v.setBackgroundColor('#ffffff');
   registerTab(v.webContents, partition);
@@ -310,8 +454,10 @@ function switchProfile(profileId) {
   if (!win) return;
   const old = siteView;
   // 앞사람이 연 편집 화면 창은 닫는다 (다른 사람 로그인으로 저장되지 않게)
+  closeAllPopups();
   for (const wc of tabs.values()) {
-    if (wc !== old?.webContents && !shimmed.has(wc)) BrowserWindow.fromWebContents(wc)?.close();
+    if (wc.isDestroyed() || wc === old?.webContents || shimmed.has(wc) || popups.some((p) => p.wc === wc)) continue;
+    BrowserWindow.fromWebContents(wc)?.close();
   }
   siteView = makeSiteView(profileId);
   win.contentView.addChildView(siteView, 1);
@@ -337,6 +483,7 @@ app.whenReady().then(() => {
   currentProfile = activeProfileId(extStore.data);
   const appSes = session.fromPartition(APP_PARTITION);
   serveExtension(appSes);
+  watchNetErrors(appSes, '앱');
   if (process.env.SILO_MOCK) {
     // 테스트 전용: 가짜 사이트·가짜 API, 배치 확인용 정보
     require(path.resolve(process.env.SILO_MOCK))({ appSes });
@@ -344,6 +491,9 @@ app.whenReady().then(() => {
       bounds: () => ({ site: siteView.getBounds(), panel: panelView.getBounds(), divider: dividerView.getBounds(), win: win.getContentSize() }),
       partition: () => partitionFor(currentProfile),
       siteId: () => siteView.webContents.id,
+      popups: () => popups.map((p) => ({ id: p.wc.id, url: p.wc.getURL(), bounds: p.view.getBounds(), visible: p.wc.id === shownPopup })),
+      shown: () => shownPopup,
+      windows: () => BrowserWindow.getAllWindows().length,
     };
   }
 
@@ -374,7 +524,7 @@ app.whenReady().then(() => {
   };
   win.on('resized', remember);
   win.on('moved', remember);
-  win.on('close', () => { remember(); prefs.flush(); extStore.flush(); });
+  win.on('close', () => { quitting = true; remember(); prefs.flush(); extStore.flush(); });
   win.on('closed', () => app.quit());
 
   // 패널은 확장 페이지만 보여 준다
@@ -388,7 +538,18 @@ app.whenReady().then(() => {
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('before-quit', () => { prefs.flush(); extStore.flush(); });
+app.on('before-quit', () => {
+  quitting = true; prefs.flush(); extStore.flush(); });
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (ev, url) => { if (/^(mailto|tel):/.test(url)) { ev.preventDefault(); shell.openExternal(url); } });
+  // F12: 사이트 창의 개발자 도구 (문제 찾기용)
+  wc.on('before-input-event', (ev, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12' && !shimmed.has(wc)) { wc.toggleDevTools(); ev.preventDefault(); }
+  });
+  // 사이트 로그인 칸에서 만들어진 창은 어떤 경로로 열렸든 탭으로 등록 (did-create-window 를 놓쳐도)
+  setImmediate(() => {
+    if (wc.isDestroyed() || tabs.has(wc.id) || wc.getType() !== 'window') return;
+    const part = sitePartitions.get(wc.session);
+    if (part) registerTab(wc, part);
+  });
 });

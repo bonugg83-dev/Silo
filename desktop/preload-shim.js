@@ -73,6 +73,30 @@ window.chrome = {
 };
 window.siloDesktop = { version: 1 };
 
+// Claude API 호출은 앱 본체(main)가 대신 보낸다. 크롬 확장은 host_permissions 덕분에 CORS 없이 바로 보내는데,
+// 앱 화면(silo://)에서 바로 보내면 컴퓨터·네트워크에 따라 "Failed to fetch" 로 막힐 수 있다.
+// 연결이 실패하면 진짜 이유(net::ERR_...)를 오류 글에 붙인다.
+const pageFetch = window.fetch.bind(window);
+let apiSeq = 0;
+window.fetch = async (input, init = {}) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (!/^https:\/\/api\.anthropic\.com\//.test(url)) return pageFetch(input, init);
+  const id = ++apiSeq;
+  const { signal } = init;
+  if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+  const onAbort = () => ipcRenderer.send('api:abort', id);
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    const headers = Object.fromEntries(new Headers(init.headers || {}).entries());
+    const r = await ipcRenderer.invoke('api:fetch', id, url, { method: init.method || 'GET', headers, body: init.body == null ? undefined : String(init.body) });
+    if (r.aborted || signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+    if (r.error) throw new TypeError(`Claude 서버에 연결하지 못했어요 (${r.error}). 인터넷 연결이나 보안 프로그램을 확인해 주세요.`);
+    return new Response(r.body, { status: r.status, statusText: r.statusText, headers: r.headers });
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
+};
+
 ipcRenderer.send('shim:hello');
 
 // 패널이 검수 창(review-open), 로그인 화면(auth-open), 시작 모션(splashing)을 열면 앱이 패널을 창 전체로 넓힌다.
@@ -80,6 +104,8 @@ ipcRenderer.send('shim:hello');
 // (확장 lib/splash.js 와 같은 기준: localStorage "silo-splash-day", 움직임 줄이기 설정).
 if (location.pathname === '/sidepanel.html') {
   let expectSplash = false;
+  // 데스크톱 앱은 켤 때마다 시작 모션을 보여 준다 (확장은 하루 한 번): 앱을 켠 뒤 패널이 처음 뜰 때 "오늘 봄" 기록을 지움
+  try { if (ipcRenderer.sendSync('splash:first')) localStorage.removeItem('silo-splash-day'); } catch {}
   try {
     expectSplash = localStorage.getItem('silo-splash-day') !== new Date().toLocaleDateString('sv')
       && !matchMedia('(prefers-reduced-motion: reduce)').matches;
