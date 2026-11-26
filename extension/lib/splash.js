@@ -41,6 +41,8 @@ function playedToday() {
 export async function playSplash(brand, { force = false } = {}) {
   if (!force && playedToday()) return;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // 데스크톱 앱: 앱이 화면을 보여 줄 때까지 기다린 뒤 창 크기를 읽는다 (확장에는 없음)
+  if (window.__siloSplashReady) await window.__siloSplashReady;
 
   const bg = getComputedStyle(document.body).backgroundColor || '#121212';
   const cv = document.createElement('canvas');

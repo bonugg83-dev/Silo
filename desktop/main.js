@@ -331,10 +331,36 @@ let reviewOpen = false;
 let authOpen = false;   // 확장의 로그인/회원가입 화면이 떠 있음 → 로그인 전에는 패널만 창 전체로
 let splashOpen = false; // 시작 모션 → 창 전체에서 재생
 let dragging = false;
+// 켜는 중: 화면(사이트·패널·막대)이 준비되기 전에는 아무것도 보이지 않고 창 바탕(검정)만 보인다.
+// 사이트 화면(흰 바탕)이나 아직 안 그려진 화면이 잠깐 하얗게 보이지 않게.
+// 창 자체는 숨기지 않는다 (숨기면 늦게 뜨고, 크기가 바뀌어 시작 모션 좌표가 틀어짐).
+let booting = true;
+let revealWaiters = [];
+function endBoot() {
+  if (!booting) return;
+  booting = false;
+  layout();
+  // 패널의 시작 모션은 화면이 실제로 보인 뒤에 시작한다 (그때 창 크기를 읽음)
+  for (const r of revealWaiters) r(true);
+  revealWaiters = [];
+}
+ipcMain.handle('boot:revealed', () => (booting ? new Promise((r) => revealWaiters.push(r)) : true));
 
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
+  const views = [barView, siteView, panelView, dividerView];
+  if (booting) {
+    // 크기는 미리 정해 두되(패널은 창 전체) 보이지는 않게
+    for (const v of views) v.setVisible(false);
+    for (const p of popups) p.view.setVisible(false);
+    barView.setBounds({ x: 0, y: 0, width: w, height: 0 });
+    siteView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    dividerView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    panelView.setBounds({ x: 0, y: 0, width: w, height: h });
+    return;
+  }
+  for (const v of [barView, panelView, dividerView]) v.setVisible(true);
   // 검수 창은 오른쪽 패널 안에서만 열림 (창 전체로 넓히지 않음)
   const full = authOpen || splashOpen;
   const strip = !full && popups.length ? STRIP_H : 0; // 창 목록 줄
@@ -507,7 +533,7 @@ app.whenReady().then(() => {
   const b = prefs.data.bounds;
   win = new BaseWindow({
     width: b?.width || 1500, height: b?.height || 960, x: b?.x, y: b?.y,
-    minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#0b0b0b', autoHideMenuBar: true,
+    minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#000000', autoHideMenuBar: true,
     icon: path.join(EXT_DIR, 'icon128.png'),
   });
   if (prefs.data.maximized) win.maximize();
@@ -520,7 +546,7 @@ app.whenReady().then(() => {
   dividerView = new WebContentsView({ webPreferences: uiPrefs });
   dividerView.setBackgroundColor('#00000000');
   panelView = new WebContentsView({ webPreferences: shimPrefs });
-  panelView.setBackgroundColor('#121212');
+  panelView.setBackgroundColor('#000000'); // 패널 글이 그려지기 전 첫 화면도 검정
   for (const v of [barView, siteView, panelView, dividerView]) win.contentView.addChildView(v);
   layout();
   win.on('resize', layout);
@@ -540,6 +566,9 @@ app.whenReady().then(() => {
 
   barView.webContents.loadURL('silo://app/bar.html');
   dividerView.webContents.loadURL('silo://app/divider.html');
+  // 패널 화면이 다 읽히면(시작 모션은 화면이 보이기를 기다리는 중) 화면을 보여 준다. 늦어도 4초 뒤에는 보여 줌
+  panelView.webContents.once('dom-ready', endBoot);
+  setTimeout(endBoot, 4000);
   panelView.webContents.loadURL('silo://ext/sidepanel.html');
   siteView.webContents.loadURL(process.env.SILO_START_URL || SITE_HOME);
 });
