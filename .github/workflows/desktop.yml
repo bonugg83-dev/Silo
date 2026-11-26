@@ -1,9 +1,16 @@
 name: 데스크톱 앱 빌드
 
+# 기본 브랜치에 머지되면: 윈도 설치 파일을 만들어 GitHub Releases에 올린다 (설치한 앱이 여기서 새 버전을 받아 감).
+#   같은 버전이 이미 올라가 있으면 다시 올리지 않으므로(설치 파일만 만듦), 새로 배포하려면 desktop/package.json 의 version 을 올린다.
+# 그 밖의 브랜치(PR 등): 설치 파일만 만들어 Actions 결과물로 남긴다 (배포하지 않음).
+
 on:
   workflow_dispatch:
   push:
     paths: ['desktop/**', 'extension/**', '.github/workflows/desktop.yml']
+
+permissions:
+  contents: write # Releases에 올리기
 
 jobs:
   windows:
@@ -15,9 +22,40 @@ jobs:
           node-version: 22
       - run: npm ci
         working-directory: desktop
-      - run: npm run dist:win
+
+      # 기본 브랜치이고 이 버전이 아직 Releases에 없을 때만 배포
+      - name: 배포할지 정하기
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=$(node -p "require('./desktop/package.json').version")
+          publish=false
+          if [ "${{ github.ref_name }}" = "${{ github.event.repository.default_branch }}" ]; then
+            if gh api "repos/${{ github.repository }}/releases/tags/v$v" >/dev/null 2>&1; then
+              echo "v$v 은 이미 배포됨: 설치 파일만 만듦 (새로 배포하려면 desktop/package.json 버전을 올리세요)"
+            else
+              publish=true
+            fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+      - name: 설치 파일 만들고 Releases에 올리기
+        if: steps.plan.outputs.publish == 'true'
+        run: npm run release:win
         working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 설치 파일만 만들기
+        if: steps.plan.outputs.publish != 'true'
+        run: npm run dist:win
+        working-directory: desktop
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Silo-win32-x64
-          path: desktop/dist/Silo-win32-x64
+          name: Silo-Setup
+          path: |
+            desktop/dist/Silo-Setup-*.exe
+            desktop/dist/latest.yml

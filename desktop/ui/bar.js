@@ -35,8 +35,17 @@ silo.onState((s) => {
   link.textContent = eds.length === 1 ? `편집 화면 연결됨${eds[0] ? ' · ' + eds[0] + '쪽' : ''}`
     : eds.length > 1 ? `편집 화면 ${eds.length}개` : '편집 화면 없음';
   link.title = link.textContent; // 말줄임으로 잘려도 전체 문구는 마우스를 올리면 보임
+  renderUpdate(s.update);
   renderStrip(s);
 });
+// 새 버전을 다 받으면 "다시 시작해서 업데이트" 버튼
+function renderUpdate(u) {
+  const b = $('update');
+  const ready = u?.status === 'ready';
+  b.hidden = !ready;
+  if (ready) $('updateText').textContent = `새 버전${u.version ? ' ' + u.version : ''} · 다시 시작`;
+}
+$('update').addEventListener('click', () => silo.cmd('installUpdate'));
 // 열린 창 목록 줄
 const ICON = {
   min: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12"/></svg>',
