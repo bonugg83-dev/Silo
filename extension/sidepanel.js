@@ -31,8 +31,9 @@ const DEFAULT_SETTINGS = {
   model: 'claude-opus-5-5',
   effort: 'high',
   verify: true,
-  verifyFull: true, // 2차 검증 때 원본 전체를 다시 훑어 누락·형식까지
-  zoom: true, // 원본 2576px + 위·아래 반쪽 확대본
+  verifyFull: false, // 2차 검증 때 원본 전체를 다시 훑어 누락·형식까지
+  zoom: true, // 불확실한 글자·누락 의심·작은 글씨가 있는 쪽만 위·아래 반쪽 확대본으로 다시 확인
+  settingsRev: 2,
   useToc: true,
   imageMax: 2000,
   dashSpacing: 'attach',
@@ -54,6 +55,7 @@ let settings = { ...DEFAULT_SETTINGS };
 let current = null;
 let autoRunning = false;
 let running = false; // 교정하기가 도는 중 (한 쪽 또는 자동모드)
+let appMoving = false; // 앱이 직접 쪽을 옮기는 중 (검수 열기 등) → 쪽 따라가기 안 함
 let stopReq = false; // 교정 중에 교정하기를 한 번 더 눌러 멈추기를 요청함
 let abort = null;
 // ---------- 교정자 프로필 (lib/profiles.js) ----------
@@ -250,7 +252,10 @@ async function loadSettings() {
   delete settings.apiKey;
   delete settings.activeKeyId;
   // 화면에서 뺀 설정은 기본값으로 고정
-  Object.assign(settings, { effort: 'high', useToc: true, imageMax: 2000, unitSymbols: true, runThrough: true, timeWarnMin: 0 });
+  // 줄표 앞뒤는 원칙대로 항상 붙여 씀 (설정 없앰)
+  Object.assign(settings, { effort: 'high', useToc: true, imageMax: 2000, unitSymbols: true, runThrough: true, timeWarnMin: 0, dashSpacing: 'attach' });
+  // 2026-11-26: 2차 검증 때 원본 전체 다시 보기는 기본 꺼짐으로 (예전에 저장된 켜짐도 한 번 끔)
+  if ((raw.settingsRev || 0) < 2) { settings.verifyFull = false; settings.zoom = true; settings.settingsRev = 2; }
   await chrome.storage.local.set({ settings });
 }
 async function persist() {
@@ -267,7 +272,7 @@ function renderMe() {
   $('meName').textContent = p.name;
   $('meSub').textContent = '로그인 중';
   $('meKey').textContent = p.mask;
-  $('monthlyLimit').value = p.monthlyLimit || 0;
+  $('monthlyLimit').value = p.monthlyLimit || '';
   const sel = $('lockAfter');
   if (!sel.options.length) for (const o of LOCK_OPTIONS) sel.add(new Option(o.label, String(o.min)));
   sel.value = String(p.lockAfterMin ?? 30);
@@ -317,7 +322,7 @@ async function deleteProfile() {
 }
 
 const ADV_FIELDS = {
-  verify: 'checked', verifyFull: 'checked', zoom: 'checked', dashSpacing: 'value', autoVisuals: 'checked', pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
+  verify: 'checked', verifyFull: 'checked', zoom: 'checked', autoVisuals: 'checked', pacing: 'checked', paceMinSec: 'value', paceMaxSec: 'value',
 };
 function fillForms() {
   const sel = $('model');
@@ -325,6 +330,7 @@ function fillForms() {
   for (const m of MODELS) sel.add(new Option(m.label, m.id));
   sel.value = settings.model;
   for (const [id, prop] of Object.entries(ADV_FIELDS)) $(id)[prop] = settings[id];
+  $('paceBox').classList.toggle('open', !!settings.pacing);
   renderMe();
 }
 async function saveAdvanced() {
@@ -561,6 +567,7 @@ async function refreshStatus() {
     showTocState(book);
     updateReviewBadge(book);
     lastStatusError = '';
+    await followEditorPage(tab, info).catch(() => {});
     return { tab, info };
   } catch (e) {
     lastStatusError = e.message;
@@ -629,8 +636,9 @@ async function analyze() {
   const img = await runInPage(tab.id, pageFetchImage, [info.imgSrc]);
   if (!img?.ok) throw new Error('원본 이미지를 가져오지 못했어요: ' + (img?.error || ''));
   stepper.reach('enhance');
-  const sent = await downscaleImage(img.dataUrl, settings.zoom ? 2576 : 2000);
-  const zoomImgs = settings.zoom ? await zoomHalves(img.dataUrl).catch(() => []) : [];
+  // 첫 교정은 확대본 없이. 확대본은 필요한 쪽에서만 2차 확인 때 보낸다
+  const sent = await downscaleImage(img.dataUrl, 2000);
+  let zoomImgs = [];
 
   const book = await getBook(info.bookIdx);
   await ensureToc(tab, info, book, abort.signal);
@@ -656,7 +664,7 @@ async function analyze() {
     pendingFootnotes,
     imageWidth: sent.width,
     imageHeight: sent.height,
-    zoomed: zoomImgs.length > 0,
+    zoomed: false,
   };
   const bookBlock = buildBookBlock(ctx);
   const call = (extra) => callClaude({
@@ -667,7 +675,7 @@ async function analyze() {
   stepper.reach('send');
   stepper.timed = true;
   // 2차 검증을 같은 대화에 이어 보내므로 1차 질문(이미지 포함)을 캐시해 둔다
-  const r1 = await call({ images: [sent.dataUrl, ...zoomImgs], userText: buildWriteMessage(ctx), cacheUser: !!settings.verify });
+  const r1 = await call({ images: [sent.dataUrl], userText: buildWriteMessage(ctx), cacheUser: !!(settings.verify || settings.zoom) });
   stepper.timed = false;
   stepper.reach('foot');
   cost += estimateCostUsd(settings.model, r1.usage);
@@ -680,14 +688,22 @@ async function analyze() {
   let r2usage = null;
 
   stepper.skipStep('verify');
-  if (settings.verify) {
-    const diffs = disagreements(ocrText, checked.text);
-    const omitted = skipOmission ? [] : findOmissions(ocrText, checked.text);
-    if (settings.verifyFull || diffs.length || omitted.length) {
-      stepper.reach('verify', settings.verifyFull ? '원본과 한 줄씩 다시 대조하는 중' : `OCR과 다른 ${diffs.length + omitted.length}곳 다시 확인하는 중`);
+  const omitted0 = skipOmission ? [] : findOmissions(ocrText, checked.text);
+  // 확대본이 필요한 쪽: 불확실한 글자·각주 표시가 있거나, 누락 의심이 있거나, 작은 글씨(각주·미주)가 있음
+  const unsure = (result.flags || []).filter((f) => ['uncertain_text', 'footnote'].includes(f.kind));
+  const needZoom = !!settings.zoom && (unsure.length > 0 || omitted0.length > 0 || /\[(각주|미주|주석|후주|주)\d/.test(checked.text));
+  if (settings.verify || needZoom) {
+    const diffs = settings.verify ? disagreements(ocrText, checked.text) : [];
+    const omitted = omitted0;
+    if (settings.verifyFull || diffs.length || omitted.length || needZoom) {
+      if (needZoom) zoomImgs = await zoomHalves(img.dataUrl).catch(() => []);
+      stepper.reach('verify', zoomImgs.length ? '확대 이미지로 작은 글씨·불확실한 곳 다시 확인하는 중'
+        : settings.verifyFull ? '원본과 한 줄씩 다시 대조하는 중' : `OCR과 다른 ${diffs.length + omitted.length}곳 다시 확인하는 중`);
       const r2 = await call({
-        prior: r1.turn, images: [], schema: VERIFY_SCHEMA,
-        userText: buildVerifyMessage(ctx, checked.text, diffs, omitted, { full: settings.verifyFull }),
+        prior: r1.turn, images: zoomImgs, schema: VERIFY_SCHEMA,
+        userText: buildVerifyMessage(ctx, checked.text, diffs, omitted, {
+          full: !!settings.verifyFull, zoomed: zoomImgs.length > 0, unsure: unsure.map((f) => f.quote || f.message).filter(Boolean),
+        }),
       });
       cost += estimateCostUsd(settings.model, r2.usage);
       r2usage = r2.usage;
@@ -1213,9 +1229,9 @@ function needsStop() {
   return reasons.join(', ');
 }
 
-/** 이번 쪽에 머물 시간(초): 최소~최대 사이 무작위 */
+/** 이번 쪽에 머물 시간(초): 켜짐이면 최소~최대 사이 무작위, 꺼짐이면 2~5초 안팎 무작위 */
 function pickPaceSec() {
-  if (!settings.pacing) return 0;
+  if (!settings.pacing) return 2 + Math.random() * 3;
   const lo = Number(settings.paceMinSec) || 0;
   const hi = Math.max(lo, Number(settings.paceMaxSec) || 0);
   return lo + Math.random() * (hi - lo);
@@ -1364,7 +1380,7 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('animationend', (e) => { if (e.animationName === 'press') e.target.classList.remove('pop'); });
 
-// 복붙하기: 흰 물이 차오르며 '복붙성공', 잠깐 뒤 가라앉음
+// 붙여넣기: 흰 물이 차오르며 '성공', 잠깐 뒤 가라앉음
 let copyTimer;
 $('btnApply').addEventListener('click', guard(async () => {
   await applyToEditor();
@@ -1374,6 +1390,8 @@ $('btnApply').addEventListener('click', guard(async () => {
   copyTimer = setTimeout(() => b.classList.remove('full'), 350 + 400);
 }));
 $('btnReviewed').addEventListener('click', guard(markReviewed));
+// 쪽 넘김 간격을 끄면 기다리는 시간 칸이 위로 접힘
+$('pacing').addEventListener('change', () => $('paceBox').classList.toggle('open', $('pacing').checked));
 
 // 수정하기 ↔ 저장
 $('btnToggleEdit').addEventListener('click', () => {
@@ -1649,8 +1667,19 @@ async function openPageForReview(n) {
   if (running) throw new Error('교정이 끝난 뒤에 열어 주세요.');
   const tab = await getEditorTab();
   setProgress(`${n}쪽으로 가는 중…`);
-  const info = await gotoPage(tab, n);
-  const book = await getBook(info.bookIdx);
+  appMoving = true;
+  let info;
+  try { info = await gotoPage(tab, n); } finally { appMoving = false; }
+  followEditorPage.seen = `${info.bookIdx}:${info.currPage}`;
+  showStoredPage(tab, info, await getBook(info.bookIdx));
+  setSettingsOpen(false);
+  await showReview(false);
+  setProgress(`${n}쪽을 열었어요.`);
+}
+
+/** 편집기에 열린 쪽의 교정 결과를 패널에 보여 준다 (편집기 내용 기준) */
+function showStoredPage(tab, info, book) {
+  const n = info.currPage;
   const rec = book.pages[n] || {};
   const text = editorHtmlToText(info.ocrHtml);
   const figs = existingFigures(info.ocrHtml);
@@ -1668,10 +1697,30 @@ async function openPageForReview(n) {
     visuals, book, reviewing: true, footMissing: rec.footMissing, footOrphans: rec.footOrphans,
     page: { value: info.nonePage ? '' : info.pageField, none: info.nonePage, note: '', guessed: false },
   };
-  setSettingsOpen(false);
-  await showReview(false);
   render();
-  setProgress(`${n}쪽을 열었어요.`);
+}
+
+/**
+ * 교정이 끝난 뒤 사용자가 왼쪽 사이트에서 쪽을 옮기면 패널도 그 쪽 결과로 따라간다.
+ * 교정한 적 없는 쪽이면 결과 칸을 비운다. 고치는 중(수정하기)이면 그대로 둔다.
+ */
+async function followEditorPage(tab, info) {
+  if (!info?.bookIdx || !Number.isFinite(info.currPage)) return;
+  // 쪽이 바뀌었을 때만 (교정·자동 모드·검수 열기처럼 앱이 옮긴 쪽은 따라가지 않고 기억만)
+  const key = `${info.bookIdx}:${info.currPage}`;
+  const moved = followEditorPage.seen && followEditorPage.seen !== key;
+  followEditorPage.seen = key;
+  if (!moved || running || autoRunning || editing || appMoving) return;
+  if (current?.info?.currPage === info.currPage && current?.info?.bookIdx === info.bookIdx) return;
+  const book = await getBook(info.bookIdx);
+  if (book.pages[info.currPage]) {
+    showStoredPage(tab, info, book);
+    setProgress(`${info.currPage}쪽 교정 결과예요.`);
+  } else if (current) {
+    current = null;
+    $('result').dataset.state = 'empty';
+    setProgress(`${info.currPage}쪽은 아직 교정하지 않았어요.`);
+  }
 }
 
 /** 편집기의 지금 내용을 text로 바꿔 넣고 임시저장 (그림은 그대로 둔다) */
