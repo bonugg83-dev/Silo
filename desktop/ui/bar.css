@@ -24,3 +24,11 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .pill { height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: #121212; transition: border-color .15s; }
 .pill:hover { border-color: #555; }
 body.locked .nav, body.locked .right { visibility: hidden; }
+
+.link { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-right: 4px; }
+.link::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; }
+.link.on { color: #cfcfcf; }
+.link.on::before { background: #3ddc84; }
+.link:empty { display: none; }
+.toast { position: fixed; right: 12px; top: 8px; height: 32px; padding: 0 14px; border-radius: 999px; background: #f1f1f1; color: #0b0b0b; display: flex; align-items: center; font-weight: 500; }
+.toast[hidden] { display: none; }

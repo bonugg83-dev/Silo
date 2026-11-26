@@ -8,7 +8,7 @@
 //
 // 확장 코드는 고치지 않는다. 확장이 쓰는 chrome.* 기능은 preload-shim.js 가 같은 이름으로
 // 흉내 내고, 실제 일은 이 파일(메인 프로세스)이 한다.
-const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, session, net, shell } = require('electron');
+const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, session, net, shell, clipboard, webContents: allWebContents } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -151,16 +151,18 @@ function registerTab(wc, partition) {
   wc.on('did-start-loading', () => broadcast('tabs:updated', id, { status: 'loading' }, tabInfo(wc)));
   wc.on('did-stop-loading', () => {
     broadcast('tabs:updated', id, { status: 'complete', url: wc.getURL() }, tabInfo(wc));
-    if (wc === siteView?.webContents) sendBar();
+    sendBar();
   });
   wc.on('did-navigate', () => wc === siteView?.webContents && sendBar());
   wc.on('did-navigate-in-page', () => wc === siteView?.webContents && sendBar());
   wc.on('focus', () => broadcast('tabs:activated', { tabId: id, windowId: tabInfo(wc)?.windowId ?? -1 }));
-  wc.once('destroyed', () => { tabs.delete(id); shimmed.delete(wc); });
+  wc.once('destroyed', () => { tabs.delete(id); shimmed.delete(wc); if (!quitting) setImmediate(sendBar); });
   if (!partition) return; // 연습 페이지 창
   // 사이트가 여는 창(편집하기 → 편집 화면 팝업/새 탭)은 같은 로그인으로 열고 탭으로 등록한다
+  // 사이트는 빈 창(about:blank)을 먼저 열고 그 창에 주소를 넣거나 폼을 보내기도 하므로 빈 창도 허용한다.
+  // 막는 것은 앱 내부 주소와 파일뿐.
   wc.setWindowOpenHandler(({ url }) => {
-    if (!/^https?:/.test(url)) return { action: 'deny' };
+    if (/^(silo|file|devtools|chrome|chrome-extension):/i.test(url)) return { action: 'deny' };
     return { action: 'allow', overrideBrowserWindowOptions: siteWindowOptions(partition) };
   });
   wc.on('did-create-window', (child) => registerTab(child.webContents, partition));
@@ -234,6 +236,7 @@ ipcMain.on('shim:hello', (e) => {
 
 // ---------- 배치 ----------
 let panelHidden = false;
+let quitting = false;
 let reviewOpen = false;
 let authOpen = false;   // 확장의 로그인/회원가입 화면이 떠 있음 → 로그인 전에는 패널만 창 전체로
 let splashOpen = false; // 시작 모션 → 창 전체에서 재생
@@ -265,13 +268,34 @@ function layout() {
   sendBar();
 }
 function sendBar() {
-  if (!barView || barView.webContents.isDestroyed() || !siteView) return;
+  if (!barView || barView.webContents.isDestroyed() || !siteView || siteView.webContents.isDestroyed()) return;
   const wc = siteView.webContents;
   barView.webContents.send('bar:state', {
     url: wc.getURL(), title: wc.getTitle(),
     canBack: wc.navigationHistory.canGoBack(), canForward: wc.navigationHistory.canGoForward(),
     panelHidden, reviewOpen, authOpen, splashOpen, profile: currentProfile,
+    editors: editorTabs().map((t) => (t.url.match(/[?&]book_page=(\d+)/) || [])[1] || ''),
   });
+}
+const isEditorUrl = (u) => /mypickebook\.org\/making\/make_book\.html/.test(u || '');
+function editorTabs() {
+  return [...tabs.values()].filter((wc) => !wc.isDestroyed() && !shimmed.has(wc)).map(tabInfo).filter((t) => t && isEditorUrl(t.url));
+}
+
+// 연결 정보: 앱이 아는 창·탭과 그 안의 프레임 주소를 클립보드로 (팝업을 못 찾을 때 원인 찾기용)
+function diagnostics() {
+  const lines = [`Silo 데스크톱 ${app.getVersion()} · Electron ${process.versions.electron} · ${process.platform}`,
+    `확장 ${EXT_DIR}`, `사이트 로그인 칸 ${partitionFor(currentProfile)}`, ''];
+  for (const wc of allWebContents.getAllWebContents()) {
+    if (wc.isDestroyed()) continue;
+    const kind = wc === siteView?.webContents ? '왼쪽 사이트' : wc === panelView?.webContents ? '패널'
+      : shimmed.has(wc) ? '앱 화면' : tabs.has(wc.id) ? '사이트 창' : '등록 안 됨';
+    lines.push(`[${wc.id}] ${kind} · ${wc.getType()} · ${wc.getURL() || '(빈 주소)'}${isEditorUrl(wc.getURL()) ? '  ← 편집 화면' : ''}`);
+    try {
+      for (const f of wc.mainFrame.framesInSubtree) if (f !== wc.mainFrame) lines.push(`     프레임 ${f.name || ''} ${f.url}`);
+    } catch {}
+  }
+  return lines.join('\n');
 }
 
 ipcMain.on('bar:cmd', (_e, cmd) => {
@@ -282,6 +306,7 @@ ipcMain.on('bar:cmd', (_e, cmd) => {
   if (cmd === 'home') wc.loadURL(SITE_HOME);
   if (cmd === 'practice') openPracticeWindow('silo://ext/practice/practice.html?idx=0&book_page=1');
   if (cmd === 'togglePanel') { panelHidden = !panelHidden; layout(); }
+  if (cmd === 'diagnostics') { clipboard.writeText(diagnostics()); barView.webContents.send('bar:toast', '연결 정보를 복사했어요. 채팅에 붙여 넣어 주세요.'); }
 });
 ipcMain.on('divider:drag', (_e, phase, x) => {
   if (phase === 'start') { dragging = true; win.contentView.addChildView(dividerView); layout(); return; }
@@ -298,8 +323,10 @@ ipcMain.on('layout:mode', (e, mode) => {
 });
 
 // ---------- 프로필 바꾸기: 사이트 화면을 그 사람의 로그인으로 다시 만든다 ----------
+const sitePartitions = new Map(); // session -> partition 이름
 function makeSiteView(profileId) {
   const partition = partitionFor(profileId);
+  sitePartitions.set(session.fromPartition(partition), partition);
   const v = new WebContentsView({ webPreferences: { partition, contextIsolation: true, sandbox: true } });
   v.setBackgroundColor('#ffffff');
   registerTab(v.webContents, partition);
@@ -374,7 +401,7 @@ app.whenReady().then(() => {
   };
   win.on('resized', remember);
   win.on('moved', remember);
-  win.on('close', () => { remember(); prefs.flush(); extStore.flush(); });
+  win.on('close', () => { quitting = true; remember(); prefs.flush(); extStore.flush(); });
   win.on('closed', () => app.quit());
 
   // 패널은 확장 페이지만 보여 준다
@@ -388,7 +415,18 @@ app.whenReady().then(() => {
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('before-quit', () => { prefs.flush(); extStore.flush(); });
+app.on('before-quit', () => {
+  quitting = true; prefs.flush(); extStore.flush(); });
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (ev, url) => { if (/^(mailto|tel):/.test(url)) { ev.preventDefault(); shell.openExternal(url); } });
+  // F12: 사이트 창의 개발자 도구 (문제 찾기용)
+  wc.on('before-input-event', (ev, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12' && !shimmed.has(wc)) { wc.toggleDevTools(); ev.preventDefault(); }
+  });
+  // 사이트 로그인 칸에서 만들어진 창은 어떤 경로로 열렸든 탭으로 등록 (did-create-window 를 놓쳐도)
+  setImmediate(() => {
+    if (wc.isDestroyed() || tabs.has(wc.id) || wc.getType() !== 'window') return;
+    const part = sitePartitions.get(wc.session);
+    if (part) registerTab(wc, part);
+  });
 });

@@ -27,8 +27,13 @@ async function site(req) {
     // 실제 사이트처럼: 내 작업에서 "편집하기"를 누르면 편집 화면이 새 창(팝업)으로 열림
     return res(`<!doctype html><meta charset="utf-8"><title>내 작업</title><h1>내 작업</h1>
       <button id="editPopup" onclick="window.open('/making/make_book.html?idx=23584&book_page=151','make_book','width=1400,height=900,scrollbars=yes')">편집하기 (팝업)</button>
-      <a id="editBlank" href="/making/make_book.html?idx=23584&book_page=151" target="_blank">편집하기 (새 탭)</a>`, 'text/html; charset=utf-8');
+      <a id="editBlank" href="/making/make_book.html?idx=23584&book_page=151" target="_blank">편집하기 (새 탭)</a>
+      <form id="f" method="post" action="/making/make_book.html?idx=23584&book_page=151"><input type="hidden" name="idx" value="23584"></form>
+      <button id="editForm" onclick="window.open('', 'make_book_f', 'width=1400,height=900'); var f=document.getElementById('f'); f.target='make_book_f'; f.submit();">편집하기 (빈 창 + 폼 전송)</button>
+      <button id="editBlankThenGo" onclick="var w=window.open('about:blank', 'make_book_b', 'width=1400,height=900'); w.location.href='/making/make_book.html?idx=23584&book_page=151';">편집하기 (빈 창 → 주소 이동)</button>
+      <button id="history" onclick="window.open('/making/history.html?idx=23584', 'hist', 'width=800,height=600')">기록 확인</button>`, 'text/html; charset=utf-8');
   }
+  if (url.pathname === '/making/history.html') return res('<!doctype html><meta charset="utf-8"><title>기록</title><h1 id="h">작업 기록</h1>', 'text/html; charset=utf-8');
   if (url.pathname === '/making/make_book.html') {
     const page = Number(url.searchParams.get('book_page') || 151);
     const html = mockHtml.replaceAll('__PAGE__', String(page)).replaceAll('__END__', '153').replace('__OCR__', `${page}쪽 OCR 본문`);

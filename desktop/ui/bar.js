@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-for (const id of ['back', 'forward', 'reload', 'home', 'practice', 'togglePanel']) $(id).addEventListener('click', () => silo.cmd(id));
+for (const id of ['back', 'forward', 'reload', 'home', 'practice', 'togglePanel', 'diagnostics']) $(id).addEventListener('click', () => silo.cmd(id));
 
 function describe(url, title) {
   let u;
@@ -22,4 +22,17 @@ silo.onState((s) => {
   $('togglePanel').setAttribute('aria-label', s.panelHidden ? '패널 펴기' : '패널 접기');
   document.body.classList.toggle('locked', !!s.authOpen);
   $('practice').hidden = !!s.reviewOpen;
+  const link = $('link');
+  const eds = s.editors || [];
+  link.classList.toggle('on', eds.length > 0);
+  link.textContent = eds.length === 1 ? `편집 화면 연결됨${eds[0] ? ' · ' + eds[0] + '쪽' : ''}`
+    : eds.length > 1 ? `편집 화면 ${eds.length}개` : '편집 화면 없음';
+});
+let toastTimer;
+silo.onToast((text) => {
+  const t = $('toast');
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
 });
