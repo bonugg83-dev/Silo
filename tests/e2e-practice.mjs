@@ -59,7 +59,7 @@ panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 panel.on('dialog', (d) => d.accept());
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
-await panel.click('#toSignup');
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 await panel.fill('#newName', '연습');
 await panel.fill('#newPw1', '1234');
 await panel.fill('#newPw1b', '1234');

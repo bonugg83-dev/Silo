@@ -158,7 +158,7 @@ panel.on('dialog', (d) => d.accept());
 // 1. 로그인 전에는 로그인·회원가입 화면만 (처음에도 로그인부터: 다른 컴퓨터에서 만든 계정일 수 있음)
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 assert.ok(await panel.isVisible('#gateLogin'));
-await panel.click('#toSignup');
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 assert.ok(await panel.isVisible('#gateSignup'));
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
 assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
@@ -197,7 +197,7 @@ await panel.click('#btnLogout');
 await panel.waitForFunction(() => document.body.classList.contains('auth-open') && !document.body.classList.contains('settings-open'));
 assert.ok(await panel.isVisible('#gateLogin'), '계정이 있으면 로그인');
 assert.equal(await panel.inputValue('#loginId'), '교정A', '마지막 아이디');
-await panel.click('#toSignup');
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 await panel.fill('#newName', '교정a');
 await panel.fill('#newPw1', '5678');
 await panel.fill('#newPw1b', '5678');

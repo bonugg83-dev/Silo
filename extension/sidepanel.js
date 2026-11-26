@@ -65,7 +65,7 @@ let abort = null;
 let pasted = false; // 지금 결과를 편집기에 붙여 넣었는지 (강조를 검수로 넘길 때)
 
 // 안내 문구에 쓰는 버튼 이름. 버튼 이름을 바꾸면 여기도 같이 바꾼다
-const LABEL = { fix: '교정하기', practice: '연습 페이지', toc: '목차' };
+const LABEL = { fix: '교정하기', practice: '테스트', toc: '목차' };
 
 /**
  * 흰 버튼(강조)은 늘 하나. 교정이 도는 동안에는 네온만 (흰색 없음).
@@ -686,7 +686,7 @@ async function getEditorTab() {
   if (all.length === 1) return all[0];
   throw new Error(all.length > 1
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
-    : `마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “${LABEL.practice}”를 눌러 주세요.`);
+    : `마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 시험해 보려면 “${LABEL.practice}”를 눌러 주세요.`);
 }
 // ---------- 관리자 피드백 ----------
 // chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
@@ -745,7 +745,7 @@ async function runInPage(tabId, func, args = []) {
   if (isPracticeUrl(tab.url)) {
     // 연습 페이지는 확장 프로그램 안의 페이지라 같은 함수를 그 페이지가 직접 실행한다
     const r = await chrome.runtime.sendMessage({ practiceCall: true, tabId, fn: func.name, args });
-    if (!r) throw new Error('연습 페이지가 아직 준비되지 않았어요.');
+    if (!r) throw new Error('테스트 화면이 아직 준비되지 않았어요.');
     if (!r.ok) throw new Error(r.error);
     return r.result;
   }
