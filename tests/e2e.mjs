@@ -222,7 +222,7 @@ await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 clearInterval(watch);
 console.log('단계 표시:', [...seen].join(' / '));
 assert.ok([...seen].some((t) => t.startsWith('편집 화면 읽는 중')), '첫 단계');
-assert.ok([...seen].some((t) => /원본과 한 줄씩 다시 대조하는 중/.test(t)), '2차 검증 단계');
+assert.ok([...seen].some((t) => /다시 (대조|확인)하는 중/.test(t)), '2차 검증 단계');
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'));
 assert.ok(await panel.isVisible('#tocAlert'), '목차 실패 알림');
 assert.equal(tocCalls, 0);
@@ -245,7 +245,8 @@ assert.match(c1.body.messages[0].content[1].text, /남풍의 밤이 여- 큰 별
 assert.match(c1.body.messages[0].content[1].text, /가로 800px, 세로 1200px/);
 assert.ok(c1.body.messages[0].content[1].cache_control, '1차 질문 캐시');
 assert.match(apiCalls[1].body.messages[2].content[0].text, /ocr_vs_draft_differences/);
-assert.match(apiCalls[1].body.messages[2].content[0].text, /누락: 원본 이미지를 위에서 아래로/);
+assert.match(apiCalls[1].body.messages[2].content[0].text, /목록의 곳/); // 기본은 다른 곳만 (원본 전체 다시 보기 꺼짐)
+assert.match(apiCalls[1].body.messages[2].content[0].text, /uncertain_spots/, '불확실한 곳도 다시 확인');
 assert.ok(out.includes('큰 별이여'), '2차 검증 수정 적용');
 assert.ok(out.includes('밤이여―오라 “매력”과'), '줄표/따옴표 교정');
 assert.ok(out.includes('옮김, 『19세기'), '겹낫표 앞 띄우기');
@@ -421,6 +422,30 @@ await panel.waitForSelector('#reviewPages .rv-empty');
 await panel.click('#btnSheetBack');
 await panel.waitForFunction(() => !document.body.classList.contains('review-open'));
 await panel.waitForTimeout(500);
+
+// 8-1. 사이트에서 쪽을 옮기면 패널도 그 쪽 교정 결과로 따라감
+await editor.goto(editor.url().replace(/book_page=\d+/, 'book_page=152'));
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('152쪽 교정 결과'), null, { timeout: 30000 });
+assert.equal(await panel.getAttribute('#result', 'data-state'), 'done');
+await editor.goto(editor.url().replace(/book_page=\d+/, 'book_page=151'));
+await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('151쪽 교정 결과'), null, { timeout: 30000 });
+
+// 8-2. 설정: 쪽 넘김 간격을 끄면 기다리는 시간 칸이 접힘, 줄표 설정 없음, 한도 0은 "한도 없음"
+await panel.click('#btnOpenSettings');
+await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
+assert.equal(await panel.locator('#dashSpacing').count(), 0, '줄표 설정 없음');
+assert.equal(await panel.getAttribute('#monthlyLimit', 'placeholder'), '한도 없음');
+assert.ok(!(await panel.textContent('#settings, body')).includes('0은 없음'));
+assert.equal(await panel.isChecked('#verifyFull'), false, '원본 전체 다시 보기 기본 꺼짐');
+if (await panel.getAttribute('#btnAdvanced', 'aria-expanded') !== 'true') await panel.click('#btnAdvanced');
+await panel.waitForTimeout(500);
+assert.ok(await panel.evaluate(() => document.querySelector('#paceBox').classList.contains('open')));
+await panel.click('label:has(#pacing)');
+assert.ok(!(await panel.evaluate(() => document.querySelector('#paceBox').classList.contains('open'))), '끄면 접힘');
+await panel.click('label:has(#pacing)');
+assert.ok(await panel.evaluate(() => document.querySelector('#paceBox').classList.contains('open')), '켜면 내려옴');
+await panel.click('#btnCloseSettings');
+assert.equal(await panel.textContent('#btnApply'), '붙여넣기성공');
 
 // 9. 자동모드로 시작한 뒤 교정하기를 한 번 더 누르면: 어두워지고, 하던 쪽만 끝내고 멈춤 (다음 쪽으로 안 감)
 await panel.click('#btnAuto');
