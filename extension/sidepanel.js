@@ -62,6 +62,37 @@ let running = false; // 교정하기가 도는 중 (한 쪽 또는 자동모드)
 let appMoving = false; // 앱이 직접 쪽을 옮기는 중 (검수 열기 등) → 쪽 따라가기 안 함
 let stopReq = false; // 교정 중에 교정하기를 한 번 더 눌러 멈추기를 요청함
 let abort = null;
+let pasted = false; // 지금 결과를 편집기에 붙여 넣었는지 (강조를 검수로 넘길 때)
+
+// 안내 문구에 쓰는 버튼 이름. 버튼 이름을 바꾸면 여기도 같이 바꾼다
+const LABEL = { fix: '교정하기', practice: '연습 페이지', toc: '목차' };
+
+/**
+ * 흰 버튼(강조)은 늘 하나. 교정이 도는 동안에는 네온만 (흰색 없음).
+ * 자동모드: 교정하기만. 직접 할 때: 교정하기 → 붙여넣기 → 검수.
+ */
+function updateEmphasis() {
+  const auto = $('btnAuto').getAttribute('aria-checked') === 'true';
+  const stage = running ? 'run' : (auto || !current) ? 'fix' : pasted ? 'review' : 'paste';
+  $('btnAnalyze').classList.toggle('white', stage === 'fix');
+  $('btnApply').classList.toggle('white', stage === 'paste');
+  $('btnReview').classList.toggle('sec', stage !== 'review');
+}
+
+/** 앱 안 확인 창. 취소가 먼저 포커스를 받고 Esc로 닫힌다. 고르면 true */
+function ask({ title, body = '', ok = '확인', danger = false }) {
+  const dlg = $('askDlg');
+  $('askTitle').textContent = title;
+  $('askBody').textContent = body;
+  $('askOk').textContent = ok;
+  $('askOk').className = `pill ${danger ? 'danger-solid' : 'white'}`;
+  dlg.returnValue = '';
+  return new Promise((res) => {
+    dlg.addEventListener('close', () => res(dlg.returnValue === 'ok'), { once: true });
+    dlg.showModal();
+    $('askCancel').focus();
+  });
+}
 // ---------- 교정자 프로필 (lib/profiles.js) ----------
 let profiles = []; // chrome.storage.local "profiles"
 let unlocked = null; // {pid, key, lastUsed} (chrome.storage.session "unlock")
@@ -468,7 +499,7 @@ async function deleteProfile() {
   const p = me();
   if (!p || running) return;
   if (p.uid && !online()) { msg('settingsMsg', '계정을 지우려면 인터넷이 될 때 다시 로그인해 주세요.'); return; }
-  if (!confirm(`“${p.name}” 계정을 지울까요? 온라인 계정과 이 컴퓨터의 키·책 진행 기록이 모두 지워져요.`)) return;
+  if (!(await ask({ title: `“${p.name}” 계정을 지울까요?`, body: '온라인 계정과 이 컴퓨터의 키·책 진행 기록이 모두 지워져요. 되돌릴 수 없어요.', ok: '지우기', danger: true }))) return;
   if (p.uid) {
     try { await cloud.deleteAccount(online()); } catch (e) { msg('settingsMsg', e instanceof OfflineError ? NEED_NET : e.message); return; }
   }
@@ -528,21 +559,14 @@ function setBusy(busy) {
 }
 
 // ---------- 교정 중 한 줄 표시 ----------
-// 실제로 그 일을 시작하면 바뀌는 단계와, AI 답을 기다리는 동안 5초마다 넘어가는 단계가 섞여 있다.
+// 실제로 그 일을 시작하면 바뀌는 단계만 보여 준다. AI 답을 기다리는 동안에는 지난 시간만 한 줄로.
 const STEPS = [
   ['read', '편집 화면 읽는 중'],
-  ['pageno', 'Page No 확인하는 중'],
+  ['pageno', '쪽 번호 확인하는 중'],
   ['image', '원본 이미지 가져오는 중'],
   ['enhance', '원본 이미지 개선 중'],
   ['watermark', '워터마크 걸러내는 중'],
   ['send', 'AI에게 원본 보내는 중'],
-  ['answer', '답변 받는 중'],
-  ['letters', '글자 하나하나 읽는 중'],
-  ['header', '머리말·쪽 번호 지우는 중'],
-  ['join', '끊긴 단어 붙이는 중'],
-  ['para', '문단 나누는 중'],
-  ['punct', '문장부호 맞추는 중'],
-  ['spell', '맞춤법·띄어쓰기 확인하는 중'],
   ['foot', '각주 찾는 중'],
   ['verify', 'OCR과 다른 곳 다시 확인하는 중'],
   ['check', '오류 검증 중'],
@@ -551,20 +575,24 @@ const STEPS = [
   ['insert', '편집기에 넣는 중'],
 ];
 const STEP_AT = Object.fromEntries(STEPS.map(([k], i) => [k, i]));
-const TIMED_MS = 5000; // AI 기다리는 동안 한 단계
 const MIN_MS = 250; // 따라잡을 때 한 단계 최소 표시
 
-function showStepLine(text) {
+function showStepLine(text, { live = false } = {}) {
   const line = $('stepLine');
+  const old = line.firstElementChild;
+  // 경과 시간처럼 같은 줄이 1초마다 바뀌면 글자만 바꾼다 (흔들리지 않게)
+  if (live && old?.dataset.live) { old.textContent = text; return; }
   const span = document.createElement('span');
-  span.textContent = `${text}…`;
+  span.textContent = live ? text : `${text}…`;
+  if (live) span.dataset.live = '1';
   line.replaceChildren(span);
   $('result').dataset.state = 'busy';
 }
+const clock = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const stepper = {
   active: false,
   start() {
-    Object.assign(this, { active: true, shown: -1, target: -1, at: 0, timed: false, skip: new Set(), text: {}, waiters: [], pending: '' });
+    Object.assign(this, { active: true, shown: -1, target: -1, at: 0, aiFrom: 0, skip: new Set(), text: {}, waiters: [], pending: '' });
     clearInterval(this.timer);
     this.timer = setInterval(() => this.tick(), 50);
   },
@@ -581,9 +609,6 @@ const stepper = {
   tick() {
     if (!this.active) return;
     const now = Date.now();
-    if (this.timed && this.shown >= STEP_AT.send && this.shown < STEP_AT.foot && this.target <= this.shown) {
-      if (now - this.at >= TIMED_MS) this.target = this.shown + 1;
-    }
     if (this.shown < this.target && (this.shown < 0 || now - this.at >= MIN_MS)) {
       this.pending = '';
       let i = this.shown + 1;
@@ -596,6 +621,8 @@ const stepper = {
       showStepLine(this.pending);
       this.pending = '';
       this.at = now;
+    } else if (this.aiFrom && this.shown === STEP_AT.send && this.target <= this.shown && now - this.at >= MIN_MS) {
+      showStepLine(`AI가 읽고 고치는 중 · ${clock(now - this.aiFrom)}`, { live: true });
     }
     this.waiters = this.waiters.filter((w) => !w());
   },
@@ -625,6 +652,7 @@ function resetBox() {
   if (editing) setEditMode(false);
   $('result').dataset.state = 'empty';
   $('tgOcr').disabled = true;
+  updateEmphasis();
 }
 /** 교정이 실패하면 전에 보이던 대로 */
 function restoreBox() {
@@ -642,7 +670,7 @@ async function getEditorTab() {
   if (all.length === 1) return all[0];
   throw new Error(all.length > 1
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
-    : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “연습 페이지 열기”를 누르세요.');
+    : `마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “${LABEL.practice}”를 눌러 주세요.`);
 }
 // ---------- 관리자 피드백 ----------
 // chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
@@ -888,10 +916,10 @@ async function analyze() {
 
   let cost = 0;
   stepper.reach('send');
-  stepper.timed = true;
+  stepper.aiFrom = Date.now();
   // 2차 검증을 같은 대화에 이어 보내므로 1차 질문(이미지 포함)을 캐시해 둔다
   const r1 = await call({ images: [sent.dataUrl], userText: buildWriteMessage(ctx), cacheUser: !!(settings.verify || settings.zoom) });
-  stepper.timed = false;
+  stepper.aiFrom = 0;
   stepper.reach('foot');
   cost += estimateCostUsd(settings.model, r1.usage);
   const result = r1.result;
@@ -1129,6 +1157,8 @@ function render() {
   renderOutputView();
   setEditMode(editing);
   $('btnReviewed').classList.toggle('hidden', !c.reviewing);
+  pasted = false;
+  updateEmphasis();
 
   $('notes').textContent = c.notes || '';
   const ch = $('changes');
@@ -1166,10 +1196,11 @@ function renderOutputView() {
       last.red = last.red || r.red;
     } else ranges.push({ ...r, titles: [...r.titles] });
   }
-  // 쪽 번호 옆 빨간 점
+  // 쪽 번호 옆 점 + 짧은 글자 (자세한 이유는 결과 칸 아래 목록에)
   const dot = $('pageDot');
   dot.classList.toggle('hidden', !unplaced.length);
   dot.classList.toggle('warn', unplaced.length > 0 && !unplaced.some((u) => u.cls === 'review'));
+  $('pageDotTxt').textContent = unplaced.length === 1 && /^쪽 번호 추정/.test(unplaced[0].text) ? '추정' : `확인 ${unplaced.length}`;
   dot.title = unplaced.map((u) => u.text).join('\n');
 
   // 그림 자리: 각 시각자료 블록의 "@@i" 줄 끝
@@ -1196,15 +1227,32 @@ function renderOutputView() {
     parent.append(document.createTextNode(displayText(text.slice(pos, to))));
   };
   let pos = 0;
-  for (const r of ranges) {
+  // 표시마다 번호를 달고, 이유는 결과 칸 아래 목록에 그대로 보여 준다 (마우스 없이도 읽히게)
+  const why = $('why');
+  why.replaceChildren();
+  const addWhy = (k, red, quote, msgs) => {
+    const li = document.createElement('li');
+    if (!red) li.className = 'warn';
+    li.append(Object.assign(document.createElement('span'), { className: 'k', textContent: k }));
+    const t = document.createElement('span');
+    if (quote) t.append(Object.assign(document.createElement('b'), { textContent: quote.length > 24 ? `${quote.slice(0, 24)}…` : quote }), ' ');
+    t.append(msgs.join(' · '));
+    li.append(t);
+    why.append(li);
+  };
+  ranges.forEach((r, i) => {
     emit(pos, r.start, view);
     const m = document.createElement('mark');
     if (!r.red) m.className = 'warn';
     m.title = r.titles.join('\n');
     emit(r.start, r.end, m);
     view.append(m);
+    view.append(Object.assign(document.createElement('sup'), { className: r.red ? 'mk' : 'mk warn', textContent: String(i + 1) }));
+    addWhy(String(i + 1), r.red, displayText(text.slice(r.start, r.end)).trim(), r.titles);
     pos = r.end;
-  }
+  });
+  for (const u of unplaced) addWhy('쪽', u.cls === 'review', '', [u.text]);
+  why.classList.toggle('hidden', !why.children.length);
   emit(pos, text.length, view);
   // 본문 끝에 있는 그림 자리
   if (imgAt.has(text.length)) view.append(visualThumb(imgAt.get(text.length)));
@@ -1347,7 +1395,7 @@ $('btnCropApply').addEventListener('click', async () => {
 
 // ---------- 넣기 / 저장 ----------
 async function applyToEditor({ reviewed = true } = {}) {
-  if (!current) throw new Error('먼저 “이 쪽 교정하기”를 눌러 주세요.');
+  if (!current) throw new Error(`먼저 “${LABEL.fix}”를 눌러 주세요.`);
   if (editing) current.text = $('output').value;
   const text = current.text.replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '');
   if (updateLiveWarn().some((m) => m.includes('< >') || m.includes('막는'))) {
@@ -1500,7 +1548,7 @@ async function autoLoop() {
       await ensureToc(st0.tab, st0.info, book0, abort.signal);
       if (!book0.toc) await ensureToc(st0.tab, st0.info, book0, abort.signal); // 한 번 더
       setProgress('');
-      if (!book0.toc && !confirm(`목차를 읽지 못했어요(${book0.tocError || '이유 모름'}).\n목차 없이 계속할까요? 제목 단계가 틀릴 수 있어요.`)) return;
+      if (!book0.toc && !(await ask({ title: '목차 없이 계속할까요?', body: `목차를 읽지 못했어요(${book0.tocError || '이유 모름'}). 이대로 교정하면 제목 단계가 틀릴 수 있어요.`, ok: '계속하기' }))) return;
     }
   }
   while (autoRunning) {
@@ -1564,6 +1612,7 @@ async function startRun() {
   setProgress('');
   $('btnAnalyze').classList.add('on');
   $('btnReview').classList.add('hidden');
+  updateEmphasis();
   setBusy(false);
   try {
     if (autoOn()) await autoLoop();
@@ -1583,6 +1632,7 @@ async function startRun() {
     stopReq = false;
     $('wait').hidden = true;
     $('btnAnalyze').classList.remove('on', 'stopping');
+    updateEmphasis();
     setBusy(false);
     refreshStatus();
   }
@@ -1599,6 +1649,7 @@ $('btnAnalyze').addEventListener('click', () => {
 $('btnAuto').addEventListener('click', () => {
   if (running || $('btnAuto').disabled) return;
   $('btnAuto').setAttribute('aria-checked', String(!autoOn()));
+  updateEmphasis();
 });
 
 // 누르는 느낌 (0.15초)
@@ -1617,6 +1668,8 @@ document.addEventListener('animationend', (e) => { if (e.animationName === 'pres
 let copyTimer;
 $('btnApply').addEventListener('click', guard(async () => {
   await applyToEditor();
+  pasted = true;
+  updateEmphasis();
   const b = $('btnApply');
   clearTimeout(copyTimer);
   b.classList.add('full');
@@ -1750,7 +1803,7 @@ async function rebuildToc() {
   abort = new AbortController();
   const tab = await getEditorTab();
   await ensureToc(tab, info, book, abort.signal);
-  setProgress(book.toc ? '목차를 다시 읽었어요. “이 책 목차”에서 확인하세요.' : '');
+  setProgress(book.toc ? `목차를 다시 읽었어요. “${LABEL.toc}”에서 확인해 주세요.` : '');
   if (!book.toc && book.tocError) throw new Error(`목차를 읽지 못했어요: ${book.tocError}`);
 }
 $('btnRebuildToc').addEventListener('click', guard(rebuildToc));
@@ -1758,6 +1811,7 @@ $('btnTocRetry').addEventListener('click', guard(rebuildToc));
 
 // ---------- 검수 (아래에서 올라오는 창) ----------
 let reviewShowAll = false;
+const rvExpanded = new Set(); // 이유를 펼쳐 둔 쪽
 let reviewDesc = false;
 const reviewOpen = () => document.body.classList.contains('review-open');
 function updateReviewBadge(book) {
@@ -1766,6 +1820,7 @@ function updateReviewBadge(book) {
   $('reviewBadge').classList.toggle('hidden', !left);
   // 교정이 끝난 뒤, 이 책에 처리한 쪽이 있으면 긴 검수 버튼을 보여 준다
   $('btnReview').classList.toggle('hidden', running || !Object.keys(book.pages || {}).length);
+  updateEmphasis();
 }
 
 /** 검수 창 맨 위: 남은 빨강·노랑 쪽 수와 진행 막대 */
@@ -1853,20 +1908,31 @@ async function renderReview() {
     top.append(Object.assign(document.createElement('span'), { className: 'rv-pg', textContent: `${n}쪽` }));
     if (rec.pageNumber) top.append(Object.assign(document.createElement('span'), { className: 'note', textContent: `쪽 번호 ${rec.pageNumber}` }));
     main.append(top);
-    // 가장 중요한 문제(빨강 먼저) 한 줄만, 나머지는 "+N" (전체 문장은 마우스를 올리면 보임)
+    // 가장 중요한 문제(빨강 먼저) 한 줄, 나머지는 "이유 N개 더 보기"를 누르면 그 자리에 펼쳐진다
     const iss = [...(rec.issues || [])].sort((x, y) => (x.cls === 'review' ? 0 : 1) - (y.cls === 'review' ? 0 : 1));
     const msgs = iss.map((it) => tidyMessage(it.text));
     if (iss.length) {
-      const f = Object.assign(document.createElement('div'), { className: 'rv-first', textContent: msgs[0] });
-      if (iss.length > 1) f.append(Object.assign(document.createElement('span'), { className: 'rv-more', textContent: `+${iss.length - 1}` }));
-      f.title = msgs.join('\n');
-      main.append(f);
+      const open = rvExpanded.has(n);
+      const ul = document.createElement('ul');
+      ul.className = 'rv-reasons';
+      (open ? msgs : msgs.slice(0, 1)).forEach((t, i) => ul.append(Object.assign(document.createElement('li'), { className: i ? 'rv-x' : 'rv-first', textContent: t })));
+      main.append(ul);
+      if (iss.length > 1) {
+        const more = Object.assign(document.createElement('button'), { type: 'button', className: 'rv-more', textContent: open ? '접기' : `이유 ${iss.length - 1}개 더 보기` });
+        more.setAttribute('aria-expanded', String(open));
+        more.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (open) rvExpanded.delete(n); else rvExpanded.add(n);
+          renderReview();
+        });
+        main.append(more);
+      }
     }
     row.setAttribute('aria-label', `${n}쪽 열기${msgs.length ? `. ${msgs.join(', ')}` : ''}`);
     const ok = document.createElement('button');
     ok.type = 'button';
     ok.className = `pill sm rv-ok${rec.reviewed ? ' white' : ''}`;
-    ok.textContent = rec.reviewed ? '확인됨' : '확인함';
+    ok.textContent = rec.reviewed ? '✓ 확인됨' : '확인함';
     ok.setAttribute('aria-pressed', String(!!rec.reviewed));
     ok.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -2119,6 +2185,7 @@ setInterval(() => { if (!running) cleanupBooks(); }, 3600 * 1000);
 playSplash($('brand')).catch(() => {});
 
 (async () => {
+  updateEmphasis();
   await loadSettings();
   await restoreUnlock();
   setupBrand(document.querySelector('.auth-brand')).catch(() => {});

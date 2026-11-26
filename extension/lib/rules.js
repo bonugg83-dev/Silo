@@ -174,7 +174,7 @@ export function applyRules(input, opts = {}) {
   }
   // 한글 앞뒤의 영문 아포스트로피는 닫는 따옴표일 가능성이 큼 → 경고만
   if (new RegExp(`[${HANGUL}]'|'[${HANGUL}]`).test(text)) {
-    warnings.push({ rule: '따옴표', message: "한글 옆에 자판 작은따옴표(')가 남아 있어요. 한글 따옴표(‘ ’)인지 확인하세요." });
+    warnings.push({ rule: '따옴표', message: "한글 옆에 자판 작은따옴표(')가 남아 있어요. 한글 따옴표(‘ ’)인지 확인해 주세요." });
   }
 
   // 12. 묶음 기호 안쪽 공백 삭제, 여는 기호 앞 한 칸
@@ -225,7 +225,7 @@ export function applyRules(input, opts = {}) {
     const a = text.split(open).length - 1;
     const b = text.split(close).length - 1;
     if (a !== b) {
-      warnings.push({ rule: '괄호 짝', message: `${name} ${open}${close} 짝이 안 맞아요 (여는 것 ${a}개, 닫는 것 ${b}개). 쪽을 넘어 이어지는 경우가 아니면 확인하세요.` });
+      warnings.push({ rule: '괄호 짝', message: `${name} ${open}${close} 짝이 안 맞아요 (여는 것 ${a}개, 닫는 것 ${b}개). 쪽을 넘어 이어지는 경우가 아니면 확인해 주세요.` });
     }
   }
   // 서로 다른 기호로 닫힌 경우: 『...」, 「...』, 〈...》 등 (안쪽에 다른 여는 기호가 없을 때)
@@ -233,16 +233,16 @@ export function applyRules(input, opts = {}) {
   const mixRe = /([『「〈《])([^『』「」〈〉《》\n]{0,80}?)([』」〉》])/g;
   for (const m of text.matchAll(mixRe)) {
     if (CLOSERS[m[1]] !== m[3]) {
-      warnings.push({ rule: '괄호 짝', quote: m[0].slice(0, 40), message: `여는 기호(${m[1]})와 닫는 기호(${m[3]})가 달라요: “${m[0].slice(0, 40)}”. 원본에서 어느 쪽이 맞는지 확인하세요.` });
+      warnings.push({ rule: '괄호 짝', quote: m[0].slice(0, 40), message: `여는 기호(${m[1]})와 닫는 기호(${m[3]})가 달라요: “${m[0].slice(0, 40)}”. 원본에서 어느 쪽이 맞는지 확인해 주세요.` });
     }
   }
 
   if (new RegExp(`[${HANGUL}] - [${HANGUL}]`).test(text)) {
-    warnings.push({ rule: '줄표/붙임표', message: '한글 사이에 띄어 쓴 하이픈( - )이 있어요. 줄표(―)인지 확인하세요.' });
+    warnings.push({ rule: '줄표/붙임표', message: '한글 사이에 띄어 쓴 하이픈( - )이 있어요. 줄표(―)인지 확인해 주세요.' });
   }
   if (/\d\s?-\s?\d/.test(text) && !/[=＜＞]/.test(text)) {
     // 연도 범위, 전화번호 등은 그대로 두지만 수식이면 −(2212)
-    if (/\d\s-\s\d/.test(text)) warnings.push({ rule: '빼기', message: '숫자 사이에 띄어 쓴 하이픈이 있어요. 빼기 기호라면 −(2212)를 쓰세요.' });
+    if (/\d\s-\s\d/.test(text)) warnings.push({ rule: '빼기', message: '숫자 사이에 띄어 쓴 하이픈이 있어요. 빼기 기호라면 −(2212)를 써 주세요.' });
   }
   const lines = text.split('\n');
   lines.forEach((line, i) => {
@@ -254,20 +254,20 @@ export function applyRules(input, opts = {}) {
       warnings.push({ rule: '목차 스타일', message: `${i + 1}번째 줄: 목차 표시 뒤에 공백이 있어요.` });
     }
     if (/^\d{1,4}$/.test(line.trim()) && lines.length > 1) {
-      warnings.push({ rule: '쪽 번호', message: `${i + 1}번째 줄 “${line.trim()}”: 숫자만 있는 줄이에요. 인쇄된 쪽 번호라면 지우세요(시의 절 번호라면 그대로).` });
+      warnings.push({ rule: '쪽 번호', message: `${i + 1}번째 줄 “${line.trim()}”: 숫자만 있는 줄이에요. 인쇄된 쪽 번호라면 지워 주세요(시의 절 번호라면 그대로).` });
     }
   });
   for (const kind of ['그림', '사진', '지도', '그래프', '글상자', '표', '가계도']) {
     const open = countMatches(text, new RegExp(`\\[${kind}(?:[ \\d\\-.]*\\]|\\s[^\\]끝]*\\])`, 'g'));
     const close = countMatches(text, new RegExp(`\\[${kind} 끝\\]`, 'g'));
-    if (open !== close) warnings.push({ rule: '시각자료', message: `[${kind}]와 [${kind} 끝]의 개수가 달라요(${open}/${close}). 다른 쪽으로 이어지는 경우가 아니면 확인하세요.` });
+    if (open !== close) warnings.push({ rule: '시각자료', message: `[${kind}]와 [${kind} 끝]의 개수가 달라요(${open}/${close}). 다른 쪽으로 이어지는 경우가 아니면 확인해 주세요.` });
   }
   if (countMatches(text, /@@t/g) !== countMatches(text, /t@@/g)) {
     warnings.push({ rule: '표', message: '@@t 와 t@@ 의 개수가 달라요. 표는 쪽마다 @@t/t@@를 넣어야 해요.' });
   }
-  if (/[\uFF0D]/.test(text)) warnings.push({ rule: '부호', message: '전각 하이픈(－)이 있어요. 빼기(−, 2212)나 자판 하이픈(-)으로 바꾸세요.' });
+  if (/[\uFF0D]/.test(text)) warnings.push({ rule: '부호', message: '전각 하이픈(－)이 있어요. 빼기(−, 2212)나 자판 하이픈(-)으로 바꿔 주세요.' });
   if (/[ㄱ-ㅎㅏ-ㅣ]{1}[가-힣]|[가-힣][ㄱ-ㅎㅏ-ㅣ]/.test(text.replace(/\u3161/g, ''))) {
-    warnings.push({ rule: 'OCR', message: '낱자(ㄱ, ㅏ 등)가 글자에 붙어 있어요. OCR 오류인지 확인하세요.' });
+    warnings.push({ rule: 'OCR', message: '낱자(ㄱ, ㅏ 등)가 글자에 붙어 있어요. OCR 오류인지 확인해 주세요.' });
   }
 
   return { text, changes, warnings };

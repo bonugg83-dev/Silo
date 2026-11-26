@@ -27,6 +27,7 @@ silo.onState((s) => {
   link.classList.toggle('on', eds.length > 0);
   link.textContent = eds.length === 1 ? `편집 화면 연결됨${eds[0] ? ' · ' + eds[0] + '쪽' : ''}`
     : eds.length > 1 ? `편집 화면 ${eds.length}개` : '편집 화면 없음';
+  link.title = link.textContent; // 말줄임으로 잘려도 전체 문구는 마우스를 올리면 보임
   renderStrip(s);
 });
 // 열린 창 목록 줄

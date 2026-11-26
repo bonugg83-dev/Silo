@@ -1,8 +1,8 @@
 @font-face { font-family: 'Libre Caslon Text'; font-weight: 700; src: url('silo://ext/fonts/LibreCaslonText-Bold-latin.woff2') format('woff2'); }
-:root { color-scheme: dark; --bg: #0b0b0b; --fg: #f1f1f1; --muted: #9a9a9a; --box: #1c1c1c; --line: #2c2c2c; --blue: #4F9DFF; }
+:root { color-scheme: dark; --bg: #0b0b0b; --fg: #f1f1f1; --sub: #cfcfcf; --muted: #9a9a9a; --btn: #272727; --box: #1c1c1c; --line: #2c2c2c; --border: #6b6b6b; --blue: #4F9DFF; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
-  font: 13px/1.4 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; user-select: none; }
+  font: 14px/1.4 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; user-select: none; }
 .bar { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
 .brand { font-family: 'Libre Caslon Text', Georgia, serif; font-weight: 700; font-size: 23px; color: #F4F4F2; line-height: 1; display: inline-flex; letter-spacing: .01em; }
 .brand .g { position: relative; }
@@ -21,13 +21,16 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .addr svg { width: 13px; height: 13px; flex-shrink: 0; }
 .addr span { overflow: hidden; text-overflow: ellipsis; }
 .addr b { color: var(--fg); font-weight: 500; }
-.pill { height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: #121212; transition: border-color .15s; }
-.pill:hover { border-color: #555; }
+/* 패널과 같은 버튼: #272727 배경, #6b6b6b 테두리, 높이 32px */
+.pill { height: 32px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--btn); white-space: nowrap; transition: border-color .15s; }
+.pill:hover { border-color: #9a9a9a; }
 body.locked .nav, body.locked .right { visibility: hidden; }
 
-.link { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-right: 4px; }
-.link::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; }
-.link.on { color: #cfcfcf; }
+/* 창이 좁으면 연결 상태는 말줄임 (주소 칸 자리를 남김) */
+.right { min-width: 0; }
+.link { font-size: 12px; color: var(--muted); display: inline-block; position: relative; padding-left: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; min-width: 0; margin-right: 4px; }
+.link::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.link.on { color: var(--sub); }
 .link.on::before { background: #3ddc84; }
 .link:empty { display: none; }
 .toast { position: fixed; right: 12px; top: 8px; height: 32px; padding: 0 14px; border-radius: 999px; background: #f1f1f1; color: #0b0b0b; display: flex; align-items: center; font-weight: 500; }
@@ -40,9 +43,9 @@ body.locked .nav, body.locked .right { visibility: hidden; }
 .tab.on { background: #1f1f1f; color: var(--fg); border-color: var(--line); }
 .tab .t { height: 100%; padding: 0 12px; display: flex; align-items: center; gap: 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: inherit; }
 .tab .t span { overflow: hidden; text-overflow: ellipsis; }
-.tab .t::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
+.tab .t::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
 .tab.editor .t::before { background: #3ddc84; }
 .tab.home .t::before { background: var(--blue); }
-.tab .b { width: 26px; height: 26px; margin-right: 3px; border-radius: 6px; display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }
+.tab .b { width: 32px; height: 32px; margin-right: 0; border-radius: 10px; display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }
 .tab .b:hover { background: #2c2c2c; color: var(--fg); }
 .tab .b svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }

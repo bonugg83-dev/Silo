@@ -152,11 +152,16 @@ assert.ok(moved.uid && moved.id === old.id, '온라인으로 옮겨도 이 컴�
 await panel.waitForFunction(() => [...document.querySelectorAll('#costMonth')].some((e) => /0\.50/.test(e.textContent)));
 
 // 계정 지우기: 온라인 계정도 지움
-panel.once('dialog', (d) => d.accept());
 await panel.click('#btnOpenSettings');
 await panel.click('#btnAdvanced');
 await panel.waitForTimeout(700);
 await panel.click('#btnDeleteProfile');
+// 브라우저 confirm 대신 앱 안 확인 창: 취소가 먼저 포커스, 빨간 지우기
+await panel.waitForSelector('#askDlg[open]');
+assert.equal(await panel.textContent('#askOk'), '지우기');
+assert.ok(await panel.evaluate(() => document.getElementById('askOk').classList.contains('danger-solid')), '지우기는 빨간 버튼');
+assert.equal(await panel.evaluate(() => document.activeElement?.id), 'askCancel', '취소가 먼저 포커스');
+await panel.click('#askOk');
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'), null, { timeout: 8000 }).catch(async () => {
   throw new Error(`지우기 안 됨: ${await panel.textContent('#settingsMsg')}`);
 });

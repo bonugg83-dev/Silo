@@ -278,6 +278,12 @@ assert.equal(await panel.getAttribute('#outputView mark', 'class'), 'warn');
 assert.match(await panel.getAttribute('#outputView mark', 'title'), /매력 글자가 흐려요/);
 assert.ok(await panel.isVisible('#pageDot'));
 assert.match(await panel.getAttribute('#pageDot', 'title'), /2차 검증 수정 못 함/);
+// 이유는 툴팁 말고 화면에도: 표시 번호 + 결과 칸 아래 목록, 쪽 번호 옆 짧은 글자
+assert.equal(await panel.textContent('#outputView sup.mk'), '1');
+assert.ok(await panel.isVisible('#why'));
+assert.match(await panel.textContent('#why'), /매력 글자가 흐려요/);
+assert.match(await panel.textContent('#why'), /2차 검증 수정 못 함/);
+assert.ok((await panel.textContent('#pageDotTxt')).length > 0);
 assert.equal(await panel.locator('#flags').count(), 0, '확인할 것 칸 없음');
 if (process.env.SHOTR) { await panel.setViewportSize({ width: 420, height: 800 }); await panel.screenshot({ path: process.env.SHOTR, fullPage: true }); }
 // 보기 칩: 하나만 켜짐
