@@ -315,6 +315,10 @@ ipcMain.on('splash:first', (e) => {
   if (first) splashShown = true;
   e.returnValue = first;
 });
+// 위쪽 막대 로고 위치 (막대는 창 왼쪽 위 0,0 에 있으므로 창 좌표와 같음): 시작 모션이 끝나는 자리
+let barBrand = null;
+ipcMain.on('bar:brand', (e, r) => { if (e.sender === barView?.webContents && r && r.height > 0) barBrand = r; });
+ipcMain.on('bar:brand-get', (e) => { e.returnValue = barBrand; });
 ipcMain.on('shim:hello', (e) => {
   shimmed.add(e.sender);
   e.sender.once('destroyed', () => shimmed.delete(e.sender));

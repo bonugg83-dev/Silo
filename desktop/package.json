@@ -8,8 +8,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node test/e2e.mjs && node test/e2e-accounts.mjs && node test/e2e-popups.mjs",
-    "dist:win": "electron-packager . Silo --platform=win32 --arch=x64 --out=dist --overwrite --extra-resource=../extension --ignore=^/test --ignore=^/dist --ignore=^/node_modules",
-    "dist:mac": "electron-packager . Silo --platform=darwin --arch=arm64 --out=dist --overwrite --extra-resource=../extension --ignore=^/test --ignore=^/dist --ignore=^/node_modules"
+    "dist:win": "electron-packager . Silo --platform=win32 --arch=x64 --out=dist --overwrite --extra-resource=../extension --icon=build/icon.ico --win32metadata.CompanyName=Silo --win32metadata.FileDescription=Silo --app-copyright=\"Copyright (C) 2026 Silo\" --ignore=^/build --ignore=^/test --ignore=^/dist --ignore=^/node_modules",
+    "dist:mac": "electron-packager . Silo --platform=darwin --arch=arm64 --out=dist --overwrite --extra-resource=../extension --ignore=^/build --ignore=^/test --ignore=^/dist --ignore=^/node_modules"
   },
   "devDependencies": {
     "@electron/packager": "18.3.6",

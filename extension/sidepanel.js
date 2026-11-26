@@ -20,7 +20,7 @@ import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
-import { playSplash, setupBrand } from './lib/splash.js';
+import { playSplash } from './lib/splash.js';
 import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
   bookKey, costKey, costPagesKey, costMonthKey, runLockKey, today, thisMonth, legacyMigration, profileDataKeys, lockExpired, overLimit, runLockedByOther,
@@ -2121,7 +2121,6 @@ playSplash($('brand')).catch(() => {});
 (async () => {
   await loadSettings();
   await restoreUnlock();
-  setupBrand(document.querySelector('.auth-brand')).catch(() => {});
   fillForms();
   await cleanupBooks();
   if (unlocked) { showTodayCost(); refreshStatus(); } else showGate(true);

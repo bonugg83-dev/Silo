@@ -1,5 +1,6 @@
 /* 어두운 테마 (YouTube Music 느낌). 버튼 효과는 0.15초. */
 :root {
+  --brand-ink: #f4f4f2; --brand-dot: #4f9dff;
   --bg: #0b0b0b; --panel: #121212; --fg: #f1f1f1; --muted: #9a9a9a; --btn: #272727; --ring: #555; --box: #1c1c1c; --line: #2c2c2c;
   --err: #ff8a8a; --err-bg: #3b1b1b; --warn: #f5c451; --warn-bg: #3a2e12;
   --neon: #4f8bff, #9b6bff, #ff5fa2, #ff9a3c, #3ddc84, #4f8bff;
@@ -246,11 +247,10 @@ input.num.wide { width: 92px; }
   .ring, .halo { animation-duration: 12s; }
   .pop, .stepline span { animation: none; }
 }
-/* Silo 로고: Libre Caslon Text Bold, 흰 글자 + 파란 i 점 */
-@font-face { font-family: "Libre Caslon Text"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/LibreCaslonText-Bold-latin.woff2) format("woff2"); }
-.brand { font-family: "Libre Caslon Text", Georgia, serif; font-size: 23px; font-weight: 700; line-height: 1.15; font-kerning: none; color: #f4f4f2; white-space: nowrap; position: relative; display: inline-block; }
-.brand .g { position: relative; display: inline-block; }
-.brand .brand-dot { position: absolute; left: 0; top: 0; width: auto; height: auto; border-radius: 0; background: none; color: #4f9dff; clip-path: inset(0 0 calc(100% - var(--dot-clip, 0px)) 0); }
+/* Silo 로고: extension/brand/silo.svg 와 같은 윤곽선. 크기는 font-size(글자 크기)로 정함 */
+.brand { font-size: 23px; width: 2.005em; height: 1.23em; display: block; flex-shrink: 0; }
+.brand .ink { fill: var(--brand-ink); }
+.brand .dot { fill: var(--brand-dot); }
 body.splashing .brand { visibility: hidden; }
 /* 시작 모션 */
 canvas.splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1000; cursor: pointer; transition: opacity .3s ease; }
@@ -291,5 +291,5 @@ body.auth-open { overflow: hidden; }
 .cost-cell b { font-size: 17px; font-variant-numeric: tabular-nums; }
 .cost-cell .note { margin: 0; }
 .limit { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: -6px; }
-.limit span { display: block; height: 100%; width: 0; background: #4f9dff; border-radius: 999px; transition: width .35s var(--ease-out); }
+.limit span { display: block; height: 100%; width: 0; background: var(--brand-dot); border-radius: 999px; transition: width .35s var(--ease-out); }
 .limit.over span { background: var(--err); }
