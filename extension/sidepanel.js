@@ -648,10 +648,11 @@ async function getEditorTab() {
     : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “연습 페이지 열기”를 누르세요.');
 }
 // ---------- 관리자 피드백 ----------
-// chrome.storage.local "feedback": {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
+// chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
 const FEEDBACK_EVERY_MS = 12 * 60 * 60 * 1000;
+const feedbackKey = () => `feedback:${pid()}`;
 async function loadFeedback() {
-  const { feedback } = await chrome.storage.local.get('feedback');
+  const { [feedbackKey()]: feedback } = await chrome.storage.local.get(feedbackKey());
   return { list: [], counts: {}, at: 0, pushed: [], shared: [], sharedAt: 0, ...(feedback || {}) };
 }
 let feedbackBusy = null;
@@ -674,11 +675,16 @@ function syncFeedback({ manual = false } = {}) {
     const { list, added } = mergeFeedback(fb.list, items);
     const next = { ...fb, list, counts: { ...fb.counts, ...got.counts }, at: Date.now() };
     // 모두의 목록: 새로 받은 피드백 올리기(내용·유형만), 모두의 것 받기
+    // "이미 올린 것"은 계정 서버에도 두어, 다른 컴퓨터에서 가져와도 두 번 올리지 않는다
     const key = (f) => `${f.idx}:${f.page}:${f.text}`;
+    await quietly(async (s) => { next.pushed = [...new Set([...next.pushed, ...await cloud.getFeedbackPushed(s)])]; });
     const toPush = list.filter((f) => !next.pushed.includes(key(f)));
-    if (toPush.length && await quietly((s) => cloud.pushFeedback(s, toPush))) next.pushed = [...next.pushed, ...toPush.map(key)];
+    if (toPush.length && await quietly(async (s) => {
+      await cloud.pushFeedback(s, toPush);
+      await cloud.saveFeedbackPushed(s, [...next.pushed, ...toPush.map(key)]);
+    })) next.pushed = [...next.pushed, ...toPush.map(key)];
     await quietly(async (s) => { next.shared = await cloud.listFeedback(s); next.sharedAt = Date.now(); });
-    await chrome.storage.local.set({ feedback: next });
+    await chrome.storage.local.set({ [feedbackKey()]: next });
     paintFeedback(next);
     return { fb: next, added: added.length };
   })().finally(() => { feedbackBusy = null; });
@@ -1672,7 +1678,7 @@ function setSettingsOpen(on) {
   $('settings').inert = !on;
   $('work').inert = on || document.body.classList.contains('auth-open');
 }
-$('btnOpenSettings').addEventListener('click', () => setSettingsOpen(true));
+$('btnOpenSettings').addEventListener('click', () => { setSettingsOpen(true); loadFeedback().then(paintFeedback); });
 $('btnCloseSettings').addEventListener('click', () => setSettingsOpen(false));
 $('btnAdvanced').addEventListener('click', () => {
   const on = $('advancedBox').classList.toggle('open');
@@ -2107,7 +2113,6 @@ $('btnFeedback').addEventListener('click', async () => {
     msg('settingsMsg', e.message);
   } finally { b.disabled = false; }
 });
-loadFeedback().then(paintFeedback);
 
 chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });

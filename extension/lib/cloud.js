@@ -208,6 +208,12 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
       }
       return writes.length;
     },
+    /** 내가 모두의 목록에 이미 올린 피드백 키 (users/{uid}/meta/feedback) */
+    async getFeedbackPushed(s) {
+      const d = await getDoc(s, '/meta/feedback');
+      return d?.pushed ? safeParse(d.pushed) || [] : [];
+    },
+    saveFeedbackPushed: (s, keys) => patch(s, '/meta/feedback', { pushed: JSON.stringify(keys) }),
     /** 모두의 피드백 [{text, type, count}] (많이 받은 순) */
     async listFeedback(s) {
       await fresh(s);

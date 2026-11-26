@@ -56,6 +56,9 @@ test('모두의 피드백: 올리면 같은 내용은 횟수만 늘고, 회원�
   await c.pushFeedback(b, [{ type: '기타', text: '빈 면이라고  입력주세요', idx: '2', page: '3' }, { type: '오탈자', text: '오타' }]);
   const list = await c.listFeedback(a);
   assert.deepEqual(list.map((x) => [x.text, x.count]), [['빈 면이라고  입력주세요', 2], ['오타', 1]]);
+  assert.deepEqual(await c.getFeedbackPushed(a), []);
+  await c.saveFeedbackPushed(a, ['1:98:빈 면']);
+  assert.deepEqual(await c.getFeedbackPushed(a), ['1:98:빈 면'], '이미 올린 것은 계정에 저장 (다른 컴퓨터에서도)');
   const stored = [...fb.docs].filter(([k]) => k.startsWith('/feedback/')).map(([, f]) => Object.keys(f).sort().join(','));
   assert.deepEqual([...new Set(stored)], ['count,text,type'], '사람·책 정보는 올리지 않음');
 });
