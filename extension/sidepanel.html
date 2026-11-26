@@ -11,7 +11,7 @@
     <div class="hd">
       <svg class="brand" id="brand" viewBox="0 -970 2005 1230" role="img" aria-label="Silo"><path class="ink" d="M502 -718 526 -771H559L569 -550H525Q475 -721 332 -721Q280 -721 251 -695.5Q222 -670 222 -626Q222 -596 241 -572.5Q260 -549 288.5 -532Q317 -515 367 -490Q439 -454 484.5 -423.5Q530 -393 563 -342.5Q596 -292 596 -218Q596 -154 560 -102.5Q524 -51 462 -21Q400 9 324 9Q277 9 233 -3Q189 -15 139 -41L104 0H73L53 -256L95 -263Q127 -150 180.5 -99.5Q234 -49 322 -49Q386 -49 423.5 -79.5Q461 -110 461 -163Q461 -193 441.5 -216Q422 -239 392 -256Q362 -273 309 -299Q234 -334 186 -365Q138 -396 104 -446.5Q70 -497 70 -569Q70 -629 103.5 -677Q137 -725 195.5 -752.5Q254 -780 326 -780Q428 -780 502 -718ZM991 0H671V-35L756 -55V-441L671 -468V-492L890 -540H911V-55L991 -35ZM1344 0H1024V-35L1109 -55V-731L1024 -758V-782L1243 -830H1264V-55L1344 -35ZM1969 -265Q1969 -188 1935.5 -125.5Q1902 -63 1837.5 -26.5Q1773 10 1684 10Q1595 10 1530.5 -26.5Q1466 -63 1432.5 -125.5Q1399 -188 1399 -265Q1399 -342 1432.5 -404.5Q1466 -467 1530.5 -503.5Q1595 -540 1684 -540Q1773 -540 1837.5 -503.5Q1902 -467 1935.5 -404.5Q1969 -342 1969 -265ZM1684 -41Q1749 -41 1775 -108Q1801 -175 1801 -265Q1801 -355 1775.5 -421.5Q1750 -488 1684 -488Q1618 -488 1592.5 -421.5Q1567 -355 1567 -265Q1567 -174 1592.5 -107.5Q1618 -41 1684 -41Z"/><path class="dot" d="M832 -780Q872 -780 896.5 -755.5Q921 -731 921 -697Q921 -664 897.5 -639.5Q874 -615 832 -615Q792 -615 769 -639.5Q746 -664 746 -697Q746 -731 769.5 -755.5Q793 -780 832 -780Z"/></svg>
       <span class="hd-r">
-        <button type="button" id="btnOpenSettings" class="icon" aria-label="설정"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button>
+        <button type="button" id="btnOpenSettings" class="icon" aria-label="설정"><svg class="stroke" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       </span>
     </div>
 
@@ -36,6 +36,7 @@
         <div id="outputView" class="output-view"></div>
         <textarea id="output" class="hidden" spellcheck="false" aria-label="교정 결과 고치기"></textarea>
       </div>
+      <ol id="why" class="why hidden" aria-label="표시한 곳"></ol>
       <div id="liveWarn" class="note warn"></div>
 
       <!-- 2층: 붙여넣기 · 수정하기 -->
@@ -49,11 +50,11 @@
       <div class="r sb">
         <div class="chips">
           <button type="button" class="chip" data-panel="tocPanel" id="tgToc" aria-pressed="false">목차</button>
-          <button type="button" class="chip" data-panel="diffPanel" id="tgOcr" aria-pressed="false" disabled>OCR 수정</button>
+          <button type="button" class="chip" data-panel="diffPanel" id="tgOcr" aria-pressed="false" disabled>OCR과 다른 곳</button>
         </div>
         <div class="r gap6">
-          <span id="pageDot" class="dot hidden" title=""></span>
-          <label class="pg"><input type="text" id="pageNum" inputmode="numeric" aria-label="쪽 번호"><span>Page</span></label>
+          <span id="pageDot" class="dot-lbl hidden"><span class="dot" aria-hidden="true"></span><span id="pageDotTxt"></span></span>
+          <label class="pg"><input type="text" id="pageNum" inputmode="numeric" aria-label="쪽 번호"><span>쪽</span></label>
           <input type="checkbox" id="nonePage" class="hidden">
         </div>
       </div>
@@ -130,7 +131,7 @@
 
     <div class="r sb">
       <button type="button" id="btnPractice2" class="pill">연습 페이지</button>
-      <button type="button" id="btnAdvanced" class="tri" aria-label="상세 설정" aria-expanded="false"><svg viewBox="0 0 12 12"><path d="M2 4h8l-4 5z"/></svg></button>
+      <button type="button" id="btnAdvanced" class="tri" aria-expanded="false">상세 설정<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4h8l-4 5z"/></svg></button>
     </div>
     <div id="advancedBox" class="adv"><div class="adv-in">
       <label class="opt">2차 검증<input type="checkbox" id="verify" class="tg"></label>
@@ -219,6 +220,15 @@
       <div class="r"><button type="button" id="btnCropApply" class="pill white">이 영역으로 자르기</button></div>
     </div>
   </div>
+
+  <!-- 앱 안 확인 창 (브라우저 confirm 대신) -->
+  <dialog id="askDlg" class="ask" aria-labelledby="askTitle" aria-describedby="askBody">
+    <form method="dialog" class="ask-in">
+      <h2 id="askTitle"></h2>
+      <p id="askBody" class="pre"></p>
+      <div class="ask-btns"><button type="submit" value="cancel" id="askCancel" class="pill" autofocus>취소</button><button type="submit" value="ok" id="askOk" class="pill"></button></div>
+    </form>
+  </dialog>
 
   <script type="module" src="sidepanel.js"></script>
 </body>

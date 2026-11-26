@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Silo",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 주는 교정 도우미입니다.",
   "permissions": [
     "sidePanel",

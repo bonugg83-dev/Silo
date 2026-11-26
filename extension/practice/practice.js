@@ -193,7 +193,7 @@ function renderCustomList(samplesCount, custom) {
   });
 }
 $('btnReset').addEventListener('click', async () => {
-  if (!confirm('연습으로 저장한 내용과 남은 시간, 도우미가 기억한 연습 책 기록을 지울까요? (넣은 내 쪽 이미지는 남아요)')) return;
+  if (!confirm('연습으로 저장한 내용과 남은 시간, Silo가 기억한 연습 책 기록을 지울까요? (넣은 내 쪽 이미지는 남아요)')) return;
   // 도우미의 책 기록은 계정마다 book:<계정 id>:<책 번호>
   const books = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('book:') && k.endsWith(`:${BOOK_IDX}`));
   await chrome.storage.local.remove([K_SAVED, K_DEADLINE, `book:${BOOK_IDX}`, ...books]);
@@ -223,7 +223,7 @@ async function init(first = true) {
   $('none_page').checked = !!(saved && saved.none);
   window.CKEDITOR.instances.content._data = saved ? saved.content : (page.ocr || '');
   showPreview();
-  document.title = `연습 ${pageNo}쪽 - 마이픽 교정 도우미`;
+  document.title = `연습 ${pageNo}쪽 - Silo`;
 }
 
 // ---------- 도우미 패널과 연결 ----------
