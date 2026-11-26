@@ -538,7 +538,6 @@ const STEPS = [
   ['send', 'AI에게 원본 보내는 중'],
   ['answer', '답변 받는 중'],
   ['letters', '글자 하나하나 읽는 중'],
-  ['egg', '구본욱 최고면 개추ㅋ'],
   ['header', '머리말·쪽 번호 지우는 중'],
   ['join', '끊긴 단어 붙이는 중'],
   ['para', '문단 나누는 중'],
@@ -553,13 +552,12 @@ const STEPS = [
 ];
 const STEP_AT = Object.fromEntries(STEPS.map(([k], i) => [k, i]));
 const TIMED_MS = 5000; // AI 기다리는 동안 한 단계
-const EGG_MS = 800; // 이스터에그는 짧게
 const MIN_MS = 250; // 따라잡을 때 한 단계 최소 표시
 
 function showStepLine(text) {
   const line = $('stepLine');
   const span = document.createElement('span');
-  span.textContent = text.endsWith('ㅋ') ? text : `${text}…`;
+  span.textContent = `${text}…`;
   line.replaceChildren(span);
   $('result').dataset.state = 'busy';
 }
@@ -584,8 +582,7 @@ const stepper = {
     if (!this.active) return;
     const now = Date.now();
     if (this.timed && this.shown >= STEP_AT.send && this.shown < STEP_AT.foot && this.target <= this.shown) {
-      const wait = STEPS[this.shown][0] === 'egg' ? EGG_MS : TIMED_MS;
-      if (now - this.at >= wait) this.target = this.shown + 1;
+      if (now - this.at >= TIMED_MS) this.target = this.shown + 1;
     }
     if (this.shown < this.target && (this.shown < 0 || now - this.at >= MIN_MS)) {
       this.pending = '';
