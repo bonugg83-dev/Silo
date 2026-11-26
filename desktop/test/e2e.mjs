@@ -65,10 +65,12 @@ const KEY = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
 const accounts = fs.existsSync(path.join(process.env.SILO_EXT || path.join(root, '..', 'extension'), 'lib', 'profiles.js'));
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
   await panel.fill('#newName', 'tester');
   await panel.fill('#newPw1', 'abcd');
   await panel.fill('#newPw1b', 'abcd');
   await panel.fill('#newKey', KEY);
+  await panel.fill('#newCode', 'TESTCODE');
   await panel.click('#btnSignup');
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
   await sleep(500);

@@ -76,11 +76,13 @@ window.siloDesktop = { version: 1 };
 // Claude API 호출은 앱 본체(main)가 대신 보낸다. 크롬 확장은 host_permissions 덕분에 CORS 없이 바로 보내는데,
 // 앱 화면(silo://)에서 바로 보내면 컴퓨터·네트워크에 따라 "Failed to fetch" 로 막힐 수 있다.
 // 연결이 실패하면 진짜 이유(net::ERR_...)를 오류 글에 붙인다.
+// Claude API와 온라인 계정(Firebase) 주소만 앱 본체가 대신 보낸다
+const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com)\//;
 const pageFetch = window.fetch.bind(window);
 let apiSeq = 0;
 window.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (!/^https:\/\/api\.anthropic\.com\//.test(url)) return pageFetch(input, init);
+  if (!API_HOSTS.test(url)) return pageFetch(input, init);
   const id = ++apiSeq;
   const { signal } = init;
   if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
@@ -90,7 +92,7 @@ window.fetch = async (input, init = {}) => {
     const headers = Object.fromEntries(new Headers(init.headers || {}).entries());
     const r = await ipcRenderer.invoke('api:fetch', id, url, { method: init.method || 'GET', headers, body: init.body == null ? undefined : String(init.body) });
     if (r.aborted || signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
-    if (r.error) throw new TypeError(`Claude 서버에 연결하지 못했어요 (${r.error}). 인터넷 연결이나 보안 프로그램을 확인해 주세요.`);
+    if (r.error) throw new TypeError(`${/anthropic/.test(url) ? 'Claude 서버' : '계정 서버'}에 연결하지 못했어요 (${r.error}). 인터넷 연결이나 보안 프로그램을 확인해 주세요.`);
     return new Response(r.body, { status: r.status, statusText: r.statusText, headers: r.headers });
   } finally {
     signal?.removeEventListener('abort', onAbort);

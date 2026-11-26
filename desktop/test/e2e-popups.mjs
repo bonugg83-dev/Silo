@@ -32,8 +32,10 @@ panel.on('dialog', (d) => d.accept());
 await panel.waitForFunction(() => !document.querySelector('canvas.splash'), null, { timeout: 15000 });
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
   await panel.fill('#newName', 'kim'); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
   await panel.fill('#newKey', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
+  await panel.fill('#newCode', 'TESTCODE');
   await panel.click('#btnSignup');
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
   await sleep(800);

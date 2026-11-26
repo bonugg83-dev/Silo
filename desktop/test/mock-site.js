@@ -69,6 +69,19 @@ module.exports = ({ appSes }) => {
   let lastPage = NaN;
   appSes.protocol.handle('https', async (req) => {
     const url = new URL(req.url);
+    if (/googleapis\.com$/.test(url.host)) {
+      // 온라인 계정 서버(Firebase)도 가짜로 (가입 코드 TESTCODE)
+      const saved = path.join(app.getPath('userData'), 'fake-firebase.json');
+      S.firebase ||= (await import(require('node:url').pathToFileURL(path.join(__dirname, '..', '..', 'tests', 'fake-firebase.mjs')).href))
+        .fakeFirebase('TESTCODE', fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : null);
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      const raw = await req.text();
+      let body = raw;
+      try { body = JSON.parse(raw); } catch { /* form */ }
+      const r = S.firebase.handle(req.url, req.method, body, req.headers.get('authorization'));
+      fs.writeFileSync(saved, JSON.stringify(S.firebase.dump()));
+      return res(JSON.stringify(r.body), 'application/json', r.status);
+    }
     if (url.host !== 'api.anthropic.com') return res('', 'text/plain', 404);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     const body = JSON.parse(await req.text());

@@ -1,10 +1,12 @@
-// 계정 테스트: v0.9 이하에서 쓰던 평문 키·책 기록이 첫 회원가입 때 옮겨지는지, 로그인 화면 모양.
+// 계정 테스트: v0.9 이하에서 쓰던 평문 키·책 기록이 첫 회원가입 때 옮겨지는지, 로그인 화면 모양,
+// 온라인 계정(가짜 Firebase): 가입 코드, 다른 컴퓨터에서 로그인, 인터넷이 끊겼을 때 로그인.
 // 실행: node tests/e2e-accounts.mjs  (SHOTS=폴더 를 주면 로그인 화면 스크린숏)
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { fakeFirebase } from './fake-firebase.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -17,6 +19,8 @@ const context = await chromium.launchPersistentContext(userDataDir, {
   headless: true, channel: 'chromium',
   args: [`--disable-extensions-except=${extPath}`, `--load-extension=${extPath}`],
 });
+const fb = fakeFirebase('TESTCODE');
+await fb.install(context);
 let [sw] = context.serviceWorkers();
 if (!sw) sw = await context.waitForEvent('serviceworker');
 const extId = new URL(sw.url()).host;
@@ -32,6 +36,8 @@ await panel.evaluate((k) => chrome.storage.local.set({
 }), OLD_KEY);
 await panel.reload();
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+assert.ok(await panel.isVisible('#gateLogin'), '처음엔 로그인 화면 (다른 컴퓨터에서 만든 계정일 수 있음)');
+await panel.click('#toSignup');
 assert.ok(await panel.isVisible('#legacyFld'), '예전 키를 고를 수 있음');
 assert.ok(!(await panel.isVisible('#newKeyFld')), '예전 키를 고르면 새 키 칸은 숨김');
 assert.equal(await panel.locator('#legacyKey option').count(), 3);
@@ -47,8 +53,16 @@ if (process.env.SHOTS) {
 await panel.fill('#newName', 'maker');
 await panel.fill('#newPw1', 'abcd');
 await panel.fill('#newPw1b', 'abcd');
+await panel.fill('#newCode', 'WRONG');
+await panel.click('#btnSignup');
+await panel.waitForFunction(() => /가입 코드가 맞지 않아요/.test(document.querySelector('#gateMsg').textContent));
+assert.equal(fb.users.size, 0, '코드가 틀리면 로그인 계정도 남기지 않음');
+await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+const cloudDoc = [...fb.docs.values()][0];
+assert.ok(cloudDoc && !JSON.stringify([...fb.docs.values()]).includes('OLDKEY_'), '서버에는 잠긴 키만');
+assert.ok(![...fb.users.values()][0].password.includes('abcd'), '서버로 원래 비밀번호를 보내지 않음');
 const all = await panel.evaluate(() => chrome.storage.local.get(null));
 const pid = all.profiles[0].id;
 assert.ok(!JSON.stringify(all).includes('OLDKEY_'), '고른 예전 키는 평문에서 지움');
@@ -82,6 +96,72 @@ if (process.env.SHOTS) {
     await panel.screenshot({ path: path.join(process.env.SHOTS, `login-${w}.png`) });
   }
 }
+
+// 다른 컴퓨터: 이 컴퓨터 기록을 다 지우고 같은 아이디로 로그인
+await panel.evaluate(() => chrome.storage.local.clear());
+await panel.reload();
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.fill('#loginId', 'MAKER');
+await panel.fill('#loginPw', 'abcd');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+const again = await panel.evaluate(() => chrome.storage.local.get(null));
+assert.equal(again.profiles.length, 1);
+assert.equal(again.profiles[0].monthlyLimit, 1, '월 한도도 따라옴');
+assert.equal(again.settings.model, 'claude-opus-5-5', '설정도 따라옴');
+await panel.waitForFunction(() => /\$/.test(document.querySelector('#costMonth').textContent));
+await panel.click('#btnOpenSettings');
+assert.match(await panel.textContent('#meKey'), /OLDKEY|sk-ant-a/);
+await panel.click('#btnLogout');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+
+// 인터넷이 끊기면 이 컴퓨터의 마지막 계정으로
+fb.offline = true;
+await panel.fill('#loginId', 'maker');
+await panel.fill('#loginPw', 'zzzz');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => /비밀번호가 맞지 않아요/.test(document.querySelector('#gateMsg').textContent));
+await panel.fill('#loginPw', 'abcd');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+await panel.click('#btnOpenSettings');
+await panel.click('#btnLogout');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+fb.offline = false;
+
+// 틀린 비밀번호 (온라인)
+await panel.fill('#loginPw', 'zzzz');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => /맞지 않아요/.test(document.querySelector('#gateMsg').textContent));
+
+// 예전 버전에서 이 컴퓨터에만 만든 계정: 가입 코드 받아 온라인으로 옮김
+const { makeProfile } = await import('../extension/lib/profiles.js');
+const old = await makeProfile({ name: 'oldie', apiKey: OLD_KEY, password: 'qwer', iter: 1000 });
+await panel.evaluate((p) => chrome.storage.local.get('profiles').then((r) => chrome.storage.local.set({ profiles: [...r.profiles, p], [`cost:${p.id}:${new Date().toLocaleDateString('sv')}`]: 0.5 })), old);
+await panel.reload();
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.fill('#loginId', 'oldie');
+await panel.fill('#loginPw', 'qwer');
+await panel.click('#btnLogin');
+await panel.waitForSelector('#loginCodeFld:not(.hidden)');
+await panel.fill('#loginCode', 'TESTCODE');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+const moved = (await panel.evaluate(() => chrome.storage.local.get('profiles'))).profiles.find((p) => p.name === 'oldie');
+assert.ok(moved.uid && moved.id === old.id, '온라인으로 옮겨도 이 컴퓨터 기록 키는 그대로');
+await panel.waitForFunction(() => [...document.querySelectorAll('#costMonth')].some((e) => /0\.50/.test(e.textContent)));
+
+// 계정 지우기: 온라인 계정도 지움
+panel.once('dialog', (d) => d.accept());
+await panel.click('#btnOpenSettings');
+await panel.click('#btnAdvanced');
+await panel.waitForTimeout(700);
+await panel.click('#btnDeleteProfile');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'), null, { timeout: 8000 }).catch(async () => {
+  throw new Error(`지우기 안 됨: ${await panel.textContent('#settingsMsg')}`);
+});
+assert.equal(fb.users.size, 1, '지운 계정은 서버에서도 사라짐');
+
 assert.deepEqual(errors, []);
-console.log('통과: 예전 키·기록 옮기기, 월 한도, 로그아웃');
+console.log('통과: 예전 키·기록 옮기기, 가입 코드, 월 한도, 로그아웃, 다른 컴퓨터 로그인, 오프라인 로그인, 예전 계정 옮기기, 계정 지우기');
 await context.close();

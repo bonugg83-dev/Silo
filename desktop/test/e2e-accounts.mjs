@@ -63,6 +63,7 @@ async function signup(name, key) {
   await panel.fill('#newPw1', 'pw-' + name);
   await panel.fill('#newPw1b', 'pw-' + name);
   if (await panel.isVisible('#newKey')) await panel.fill('#newKey', key);
+  await panel.fill('#newCode', 'TESTCODE');
   await panel.click('#btnSignup');
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'), null, { timeout: 15000 });
   await sleep(500);

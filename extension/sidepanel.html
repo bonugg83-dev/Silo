@@ -149,27 +149,25 @@
       <span class="brand auth-brand" role="img" aria-label="Silo">S<span class="g">ı<span class="brand-dot" aria-hidden="true">i</span></span>lo</span>
 
       <form id="gateLogin" class="stack" autocomplete="on">
-        <div class="gate-title"><h1>다시 오셨네요</h1><p class="note">아이디와 비밀번호로 로그인해 주세요.</p></div>
+        <div class="gate-title"><h1 id="loginTitle">다시 오셨네요</h1><p class="note">아이디와 비밀번호로 로그인해 주세요. 처음이면 아래 회원가입을 눌러 주세요.</p></div>
         <label class="fld">아이디<input type="text" id="loginId" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
         <label class="fld">비밀번호<input type="password" id="loginPw" autocomplete="current-password"></label>
         <button type="submit" id="btnLogin" class="pill white block">로그인</button>
         <p class="note swap">계정이 없나요? <button type="button" id="toSignup" class="link">회원가입</button></p>
         <button type="button" id="btnForgot" class="link note center">비밀번호를 잊었어요</button>
         <div id="forgotBox" class="adv"><div class="adv-in">
-          <p class="note">비밀번호를 찾는 방법은 없어요. 아이디와 API 키를 다시 넣고 새 비밀번호를 정하면, 책 진행과 비용 기록은 그대로 이어져요.</p>
-          <input type="password" id="resetKey" placeholder="sk-ant-..." autocomplete="off" aria-label="API 키">
-          <input type="password" id="resetPw" placeholder="새 비밀번호" autocomplete="new-password" aria-label="새 비밀번호">
-          <input type="password" id="resetPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
-          <div class="r"><button type="button" id="btnReset" class="pill">새 비밀번호로 로그인</button></div>
+          <p class="note">비밀번호는 찾을 수 없어요. 관리자에게 계정 삭제를 부탁한 뒤 같은 아이디로 다시 가입해 주세요. API 키는 다시 넣어야 해요.</p>
         </div></div>
+        <label class="fld hidden" id="loginCodeFld">가입 코드<input type="text" id="loginCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="이 계정을 온라인으로 옮길 때 한 번만"></label>
       </form>
 
       <form id="gateSignup" class="stack hidden" autocomplete="off">
-        <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">이 컴퓨터에 계정을 만들어요. API 키는 비밀번호로 잠가 저장해요.</p></div>
+        <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">어느 컴퓨터에서나 같은 아이디로 로그인할 수 있어요. API 키는 비밀번호로 잠가 저장해요.</p></div>
         <label class="fld">아이디<input type="text" id="newName" maxlength="20" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="영문, 숫자, 한글 2~20자"></label>
         <label class="fld">비밀번호<input type="password" id="newPw1" autocomplete="new-password" placeholder="4자 이상"></label>
         <label class="fld">비밀번호 확인<input type="password" id="newPw1b" autocomplete="new-password"></label>
         <label class="fld hidden" id="legacyFld">API 키<select id="legacyKey"></select></label>
+        <label class="fld">가입 코드<input type="text" id="newCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="받은 가입 코드"></label>
         <label class="fld" id="newKeyFld">Claude API 키<input type="password" id="newKey" placeholder="sk-ant-..." autocomplete="off"></label>
         <button type="submit" id="btnSignup" class="pill white block">가입하고 시작하기</button>
         <p class="note swap">이미 계정이 있나요? <button type="button" id="toLogin" class="link">로그인</button></p>

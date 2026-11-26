@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { fakeFirebase } from './fake-firebase.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -56,6 +57,7 @@ const context = await chromium.launchPersistentContext(userDataDir, {
   channel: 'chromium',
   args: [`--disable-extensions-except=${extPath}`, `--load-extension=${extPath}`],
 });
+await fakeFirebase('TESTCODE').install(context);
 
 await context.route('https://www.mypickebook.org/**', async (route) => {
   const url = new URL(route.request().url());
@@ -135,15 +137,24 @@ await editor.goto('https://www.mypickebook.org/making/make_book.html?idx=23584')
 
 const panel = await context.newPage();
 panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
-panel.on('console', (m) => { if (m.type() === 'error') errors.push('panel console: ' + m.text()); });
+// 계정 서버가 400/404로 답하는 건 정상(틀린 비밀번호, 아직 없는 비용 문서)이라 브라우저가 찍는 오류 줄은 뺌
+const cloudFails = new Set();
+panel.on('response', (r) => { if (/googleapis\.com/.test(r.url()) && r.status() >= 400) cloudFails.add(r.status()); });
+panel.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  const st = /status of (\d+)/.exec(m.text());
+  if (st && cloudFails.has(Number(st[1]))) return;
+  errors.push('panel console: ' + m.text());
+});
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 
 panel.on('dialog', (d) => d.accept());
 
-// 1. 로그인 전에는 로그인·회원가입 화면만 (계정이 없으면 회원가입부터)
+// 1. 로그인 전에는 로그인·회원가입 화면만 (처음에도 로그인부터: 다른 컴퓨터에서 만든 계정일 수 있음)
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
-assert.ok(await panel.isVisible('#gateSignup'), '계정이 없으면 회원가입');
-assert.ok(!(await panel.isVisible('#gateLogin')));
+assert.ok(await panel.isVisible('#gateLogin'));
+await panel.click('#toSignup');
+assert.ok(await panel.isVisible('#gateSignup'));
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
 assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
 
@@ -155,6 +166,7 @@ async function signup(id, pw, key) {
   await panel.fill('#newPw1', pw);
   await panel.fill('#newPw1b', pw);
   await panel.fill('#newKey', key);
+  await panel.fill('#newCode', 'TESTCODE');
   await panel.click('#btnSignup');
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 }
@@ -162,6 +174,7 @@ await panel.fill('#newName', '교정A');
 await panel.fill('#newPw1', '1234');
 await panel.fill('#newPw1b', '9999');
 await panel.fill('#newKey', KEY_A);
+await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 assert.match(await panel.textContent('#gateMsg'), /달라/);
 await signup('교정A', '1234', KEY_A);
@@ -184,6 +197,7 @@ await panel.fill('#newName', '교정a');
 await panel.fill('#newPw1', '5678');
 await panel.fill('#newPw1b', '5678');
 await panel.fill('#newKey', KEY_B);
+await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 assert.match(await panel.textContent('#gateMsg'), /이미 있는/, '아이디는 대소문자 구분 없이 하나');
 await signup('교정B', '5678', KEY_B);
@@ -317,7 +331,7 @@ assert.match(await panel.textContent('#todayCost'), /오늘 2쪽, 쪽당 약/);
 const costKeys = Object.keys(await panel.evaluate(() => chrome.storage.local.get(null))).filter((k) => k.startsWith('cost'));
 assert.ok(costKeys.length === 3 && costKeys.every((k) => k.includes(`:${pidA}:`)), '비용은 계정별');
 const bookKeys = Object.keys(await panel.evaluate(() => chrome.storage.local.get(null))).filter((k) => k.startsWith('book:'));
-assert.ok(bookKeys.includes(`book:${pidA}:23584`) && bookKeys.every((k) => /^book:[0-9a-f-]{36}:23584$/.test(k)), '책 기록도 계정별');
+assert.ok(bookKeys.includes(`book:${pidA}:23584`) && bookKeys.every((k) => /^book:[A-Za-z0-9-]{2,40}:23584$/.test(k)), '책 기록도 계정별');
 const bookA = (await panel.evaluate((k) => chrome.storage.local.get(k), `book:${pidA}:23584`))[`book:${pidA}:23584`];
 const bookB = (await panel.evaluate((k) => chrome.storage.local.get(k), bookKeys.find((k) => !k.includes(pidA))))[bookKeys.find((k) => !k.includes(pidA))] || { pages: {} };
 assert.ok(Object.keys(bookA.pages).length >= 1 && Object.keys(bookB.pages).length === 0, '다른 계정의 진행은 섞이지 않음');
