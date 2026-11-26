@@ -281,6 +281,8 @@ ipcMain.handle('runtime:send', (e, msg) => new Promise((resolve) => {
   for (const wc of targets) wc.send('runtime:message', id, msg);
 }));
 ipcMain.on('runtime:response', (_e, id, r) => pending.get(id)?.(r));
+// Claude API와 온라인 계정(Firebase) 주소만 앱 본체가 대신 보낸다
+const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com)\//;
 // Claude API: 패널 대신 앱 본체가 보낸다 (preload-shim.js 의 fetch 참고)
 const apiCalls = new Map();
 const netLog = [];
@@ -289,7 +291,7 @@ function logNet(line) {
   if (netLog.length > 30) netLog.shift();
 }
 ipcMain.handle('api:fetch', async (e, id, url, { method, headers, body }) => {
-  if (!shimmed.has(e.sender) || !/^https:\/\/api\.anthropic\.com\//.test(url)) return { error: 'blocked' };
+  if (!shimmed.has(e.sender) || !API_HOSTS.test(url)) return { error: 'blocked' };
   const ctl = new AbortController();
   apiCalls.set(id, ctl);
   try {

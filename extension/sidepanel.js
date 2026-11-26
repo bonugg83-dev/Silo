@@ -20,8 +20,9 @@ import { staleBookKeys } from './lib/cleanup.js';
 import { playSplash, setupBrand } from './lib/splash.js';
 import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
-  bookKey, costKey, costPagesKey, costMonthKey, runLockKey, legacyMigration, profileDataKeys, lockExpired, overLimit, runLockedByOther,
+  bookKey, costKey, costPagesKey, costMonthKey, runLockKey, today, thisMonth, legacyMigration, profileDataKeys, lockExpired, overLimit, runLockedByOther,
 } from './lib/profiles.js';
+import { createCloud, OfflineError, CloudError } from './lib/cloud.js';
 
 const $ = (id) => document.getElementById(id);
 const TOC_VERSION = 2;
@@ -67,7 +68,22 @@ const PANEL_ID = crypto.randomUUID();
 
 const pid = () => runPid || unlocked?.pid || '';
 const me = () => profiles.find((p) => p.id === pid());
-async function saveProfiles() { await chrome.storage.local.set({ profiles }); }
+// 온라인 계정 (lib/cloud.js). 로그인 세션은 chrome.storage.session "cloud" 에 (브라우저를 닫으면 사라짐)
+const cloud = createCloud();
+let cloudSes = null; // {pid, uid, idToken, refreshToken, exp}
+const online = () => (cloudSes && cloudSes.pid === pid() ? cloudSes : null);
+async function keepSession() { if (cloudSes) await chrome.storage.session.set({ cloud: cloudSes }); }
+/** 온라인 저장: 인터넷이 안 되면 조용히 넘어감 (다음에 다시 올림) */
+async function quietly(f) {
+  const s = online();
+  if (!s) return false;
+  try { await f(s); await keepSession(); return true; } catch (e) { console.warn('온라인 저장 실패', e); return false; }
+}
+async function saveProfiles() {
+  await chrome.storage.local.set({ profiles });
+  const p = me();
+  if (p?.uid) quietly((s) => cloud.saveProfile(s, p));
+}
 function paintAvatar(el, p) {
   if (!el) return;
   const [bg, fg] = AVATAR_COLORS[(p?.color || 0) % AVATAR_COLORS.length];
@@ -80,20 +96,23 @@ async function setLockState(on) {
     : { lockState: { pid: (await chrome.storage.local.get('activeProfileId')).activeProfileId || '', unlocked: false, at: Date.now() } };
   await chrome.storage.local.set(st);
 }
-async function openProfile(p, apiKey) {
+async function openProfile(p, apiKey, ses = null) {
   unlocked = { pid: p.id, key: apiKey, lastUsed: Date.now() };
-  await chrome.storage.session.set({ unlock: unlocked });
+  cloudSes = ses ? { ...ses, pid: p.id } : null;
+  await chrome.storage.session.set({ unlock: unlocked, cloud: cloudSes });
   await setLockState(true);
   await chrome.storage.local.set({ lastLoginId: p.name });
   showGate(false);
   fillForms();
   showTodayCost();
   refreshStatus();
+  if (cloudSes) syncCost();
 }
 async function lock() {
   if (running) { msg('settingsMsg', '교정이 끝난 뒤 로그아웃할 수 있어요.'); return; }
   unlocked = null;
-  await chrome.storage.session.remove('unlock');
+  cloudSes = null;
+  await chrome.storage.session.remove(['unlock', 'cloud']);
   await setLockState(false);
   setSettingsOpen(false);
   resetBox();
@@ -106,11 +125,11 @@ function touch() {
   chrome.storage.session.set({ unlock: unlocked });
 }
 async function restoreUnlock() {
-  const r = await chrome.storage.session.get('unlock');
+  const r = await chrome.storage.session.get(['unlock', 'cloud']);
   const u = r.unlock;
   const p = profiles.find((x) => x.id === u?.pid);
-  if (u && p && !lockExpired(u, p)) unlocked = u;
-  else if (u) await chrome.storage.session.remove('unlock');
+  if (u && p && !lockExpired(u, p)) { unlocked = u; cloudSes = r.cloud?.pid === u.pid ? r.cloud : null; }
+  else if (u) await chrome.storage.session.remove(['unlock', 'cloud']);
 }
 
 // 로그인 · 회원가입 화면 (로그인해야 앱을 쓸 수 있음)
@@ -131,7 +150,8 @@ function showGate(on) {
   $('loginPw').value = '';
   $('forgotBox').classList.remove('open');
   chrome.storage.local.get('lastLoginId').then((r) => { if (!$('loginId').value) $('loginId').value = r.lastLoginId || ''; });
-  gateStep(profiles.length ? 'login' : 'signup');
+  $('loginTitle').textContent = profiles.length ? '다시 오셨네요' : 'Silo에 로그인';
+  gateStep('login');
 }
 function prepSignup() {
   // 예전 버전에 그냥 저장해 둔 키가 있으면 골라 쓸 수 있게
@@ -141,57 +161,132 @@ function prepSignup() {
   if (settings.keys.length) sel.add(new Option('새 키 넣기', ''));
   $('legacyFld').classList.toggle('hidden', !settings.keys.length);
   $('newKeyFld').classList.toggle('hidden', !!settings.keys.length && !!sel.value);
-  $('signupSub').textContent = profiles.length
-    ? '이 컴퓨터에 계정을 하나 더 만들어요. API 키는 비밀번호로 잠가 저장해요.'
-    : '처음이시네요. 이 컴퓨터에 계정을 만들어요. API 키는 비밀번호로 잠가 저장해요.';
+}
+const NEED_NET = '인터넷 연결이 필요해요. 연결한 뒤 다시 해 주세요.';
+/** 처음 계정일 때: 계정이 없던 때의 책·비용 기록을 이 계정 것으로 */
+async function adoptLegacy(p) {
+  const plan = legacyMigration(await chrome.storage.local.get(null), p.id);
+  if (Object.keys(plan.set).length) await chrome.storage.local.set(plan.set);
+  if (plan.remove.length) await chrome.storage.local.remove(plan.remove);
 }
 async function signup() {
   const name = $('newName').value.trim();
+  const code = $('newCode').value.trim();
   const legacy = settings.keys.find((k) => k.id === $('legacyKey').value);
   const apiKey = legacy ? legacy.key : $('newKey').value.trim();
   const pw = $('newPw1').value;
   const bad = !/^[A-Za-z0-9가-힣_.-]{2,20}$/.test(name) ? '아이디는 영문, 숫자, 한글로 2~20자예요.'
-    : findAccount(name) ? '이미 있는 아이디예요.'
+    : findAccount(name) ? '이 컴퓨터에 이미 있는 아이디예요. 로그인해 주세요.'
       : checkPassword(pw, $('newPw1b').value)
+        || (!code ? '가입 코드를 넣어 주세요.' : '')
         || (!isApiKey(apiKey) ? 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.' : '');
   if (bad) { $('gateMsg').textContent = bad; return; }
-  $('gateMsg').textContent = '키를 잠그는 중…';
+  $('gateMsg').textContent = '계정을 만드는 중…';
   const first = !profiles.length;
   const p = await makeProfile({ name, apiKey, password: pw, index: profiles.length });
-  profiles.push(p);
-  await saveProfiles();
-  if (first) {
-    // 계정이 없던 때의 책·비용 기록은 처음 만든 계정 것으로
-    const plan = legacyMigration(await chrome.storage.local.get(null), p.id);
-    if (Object.keys(plan.set).length) await chrome.storage.local.set(plan.set);
-    if (plan.remove.length) await chrome.storage.local.remove(plan.remove);
+  let ses;
+  try {
+    ses = await cloud.signUp({ id: name, password: pw, code, profile: p, settings });
+  } catch (e) {
+    $('gateMsg').textContent = e instanceof OfflineError ? NEED_NET : e.message;
+    return;
   }
+  p.id = p.uid = ses.uid;
+  profiles.push(p);
+  await chrome.storage.local.set({ profiles });
+  if (first) { await adoptLegacy(p); await uploadLocalCosts(p, ses); }
   if (legacy) {
     settings.keys = settings.keys.filter((k) => k.id !== legacy.id);
-    await persist();
+    await chrome.storage.local.set({ settings });
   }
-  for (const id of ['newName', 'newPw1', 'newPw1b', 'newKey']) $(id).value = '';
-  await openProfile(p, apiKey);
+  for (const id of ['newName', 'newPw1', 'newPw1b', 'newKey', 'newCode']) $(id).value = '';
+  await openProfile(p, apiKey, ses);
+}
+/** 서버의 계정 기록을 이 컴퓨터에 반영 (없으면 새로 둠) */
+function mergeCloudProfile(local, remote, uid) {
+  if (local) { Object.assign(local, remote, { uid }); return local; }
+  const p = { ...remote, id: uid, uid };
+  profiles.push(p);
+  return p;
 }
 async function login() {
-  const p = findAccount($('loginId').value);
-  if (!p) { $('gateMsg').textContent = '없는 아이디예요. 처음이면 회원가입을 눌러 주세요.'; return; }
+  const id = $('loginId').value.trim();
+  const pw = $('loginPw').value;
+  if (!id) { $('gateMsg').textContent = '아이디를 넣어 주세요.'; return; }
+  const local = findAccount(id);
   $('gateMsg').textContent = '로그인하는 중…';
-  const k = await decryptKey(p.enc, $('loginPw').value);
-  if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
-  await openProfile(p, k);
+  let r;
+  try {
+    r = await cloud.signIn({ id, password: pw });
+  } catch (e) {
+    if (e instanceof OfflineError) {
+      // 인터넷이 안 되면 이 컴퓨터에 남은 계정으로
+      if (!local) { $('gateMsg').textContent = `${NEED_NET} (이 컴퓨터에서 처음 로그인하는 아이디예요)`; return; }
+      const k = await decryptKey(local.enc, pw);
+      if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
+      await openProfile(local, k);
+      msg('settingsMsg', '인터넷이 안 돼서 이 컴퓨터에 남은 기록으로 들어왔어요.');
+      return;
+    }
+    if (e instanceof CloudError && /LOGIN|PASSWORD|NOT_FOUND/.test(e.code) && local && !local.uid) return moveOnline(local, pw);
+    $('gateMsg').textContent = e.message;
+    return;
+  }
+  if (!r.profile) { $('gateMsg').textContent = '계정 기록이 없어요. 관리자에게 계정 삭제를 부탁한 뒤 다시 가입해 주세요.'; return; }
+  const k = await decryptKey(r.profile.enc, pw);
+  if (!k) { $('gateMsg').textContent = 'API 키를 풀지 못했어요. 다시 가입해 주세요.'; return; }
+  const first = !profiles.length;
+  const p = mergeCloudProfile(local, r.profile, r.session.uid);
+  await chrome.storage.local.set({ profiles });
+  if (first) await adoptLegacy(p);
+  if (r.settings) {
+    settings = { ...settings, ...r.settings, keys: settings.keys };
+    await chrome.storage.local.set({ settings });
+  }
+  await openProfile(p, k, r.session);
 }
-async function resetProfile() {
-  const p = findAccount($('loginId').value);
-  if (!p) { $('gateMsg').textContent = '위 아이디 칸에 아이디를 넣어 주세요.'; return; }
-  const apiKey = $('resetKey').value.trim();
-  const bad = !isApiKey(apiKey) ? 'API 키 형식이 아니에요.' : checkPassword($('resetPw').value, $('resetPw2').value);
-  if (bad) { $('gateMsg').textContent = bad; return; }
-  p.enc = await encryptKey(apiKey, $('resetPw').value);
-  p.mask = maskKey(apiKey);
-  await saveProfiles();
-  for (const id of ['resetKey', 'resetPw', 'resetPw2']) $(id).value = '';
-  await openProfile(p, apiKey);
+/** 예전에 이 컴퓨터에만 만든 계정: 비밀번호가 맞으면 가입 코드를 받아 온라인으로 옮김 */
+async function moveOnline(p, pw) {
+  const k = await decryptKey(p.enc, pw);
+  if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
+  const code = $('loginCode').value.trim();
+  if (!code) {
+    $('loginCodeFld').classList.remove('hidden');
+    $('gateMsg').textContent = '이 계정은 아직 이 컴퓨터에만 있어요. 가입 코드를 넣고 로그인하면 온라인으로 옮겨요.';
+    $('loginCode').focus();
+    return;
+  }
+  $('gateMsg').textContent = '계정을 온라인으로 옮기는 중…';
+  let ses;
+  try {
+    ses = await cloud.signUp({ id: p.name, password: pw, code, profile: p, settings });
+  } catch (e) {
+    $('gateMsg').textContent = e instanceof OfflineError ? NEED_NET : e.message;
+    return;
+  }
+  p.uid = ses.uid; // 책·비용 기록 키는 예전 id 그대로
+  await chrome.storage.local.set({ profiles });
+  $('loginCode').value = '';
+  $('loginCodeFld').classList.add('hidden');
+  await uploadLocalCosts(p, ses);
+  await openProfile(p, k, ses);
+}
+/** 이 컴퓨터에만 쌓인 비용 기록을 서버로 (온라인으로 옮길 때 한 번) */
+async function uploadLocalCosts(p, ses) {
+  const all = await chrome.storage.local.get(null);
+  const re = new RegExp(`^(cost|costpages):${p.id}:(\\d{4}-\\d{2}-\\d{2})$`);
+  const days = {};
+  for (const [key, v] of Object.entries(all)) {
+    const m = re.exec(key);
+    if (m) (days[m[2]] ||= { usd: 0, pages: 0 })[m[1] === 'cost' ? 'usd' : 'pages'] = Number(v) || 0;
+  }
+  try {
+    for (const [day, c] of Object.entries(days)) await cloud.addCost(ses, { ...c, day });
+  } catch (e) {
+    // 못 올린 건 다음에 다시
+    const list = Object.entries(days).map(([day, c]) => ({ ...c, day }));
+    await chrome.storage.local.set({ [pendKey(p.id)]: list });
+  }
 }
 
 // ---------- 비용 (프로필별) ----------
@@ -205,6 +300,7 @@ async function addCost(usd) {
   const mk = costMonthKey(pid());
   const r = await chrome.storage.local.get([k, mk]);
   await chrome.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
+  pushCost({ usd });
   // 월 한도에 닿으면 자동모드는 이 쪽까지만
   if (autoRunning && overLimit(me(), (r[mk] || 0) + usd)) {
     autoRunning = false;
@@ -218,6 +314,47 @@ async function logPage(entry) {
   const r = await chrome.storage.local.get([day, 'usageLog']);
   const log = [...(r.usageLog || []), { at: Date.now(), pid: pid(), ...entry }].slice(-300);
   await chrome.storage.local.set({ [day]: (r[day] || 0) + 1, usageLog: log });
+  pushCost({ pages: 1 });
+  showTodayCost();
+}
+// 비용 합계는 온라인에도 (여러 컴퓨터 합계). 올리지 못한 건 모아 두었다가 다음에 올림
+const pendKey = (id) => `cloudpending:${id}`;
+async function pushCost(c) {
+  const id = pid();
+  if (!me()?.uid) return;
+  const k = pendKey(id);
+  const list = [...((await chrome.storage.local.get(k))[k] || []), { ...c, day: today() }];
+  await chrome.storage.local.set({ [k]: list });
+  await flushCost();
+}
+let flushing = false;
+async function flushCost() {
+  const k = pendKey(pid());
+  if (flushing || !online()) return;
+  flushing = true;
+  try {
+    const list = (await chrome.storage.local.get(k))[k] || [];
+    let done = 0;
+    for (const c of list) {
+      if (!(await quietly((s) => cloud.addCost(s, c)))) break;
+      done++;
+    }
+    if (done) {
+      const now = (await chrome.storage.local.get(k))[k] || [];
+      await chrome.storage.local.set({ [k]: now.slice(done) });
+    }
+  } finally { flushing = false; }
+}
+/** 로그인할 때: 다른 컴퓨터에서 쓴 비용까지 합친 이번 달·오늘 합계를 받아 옴 */
+async function syncCost() {
+  const id = pid();
+  await flushCost();
+  if ((((await chrome.storage.local.get(pendKey(id)))[pendKey(id)]) || []).length) return; // 못 올린 게 남으면 덮어쓰지 않음
+  let m;
+  if (!(await quietly(async (s) => { m = await cloud.monthCost(s, thisMonth()); }))) return;
+  if (!m.usd) return; // 이번 달에 아직 쓴 게 없음
+  const dd = today().slice(8, 10);
+  await chrome.storage.local.set({ [costMonthKey(id)]: m.usd, [costKey(id)]: m.days[dd]?.usd || 0, [costPagesKey(id)]: m.days[dd]?.pages || 0 });
   showTodayCost();
 }
 const won = (usd) => `약 ${Math.round(usd * 1450).toLocaleString()}원`;
@@ -260,6 +397,7 @@ async function loadSettings() {
 }
 async function persist() {
   await chrome.storage.local.set({ settings });
+  if (me()?.uid) quietly((s) => cloud.saveSettings(s, settings));
 }
 function activeKey() {
   return runKey || unlocked?.key || '';
@@ -305,7 +443,19 @@ async function changePassword() {
   if (!k) { msg('settingsMsg', '지금 비밀번호가 맞지 않아요.'); return; }
   const bad = checkPassword($('newPw').value, $('newPw2').value);
   if (bad) { msg('settingsMsg', bad); return; }
-  p.enc = await encryptKey(k, $('newPw').value);
+  const encNew = await encryptKey(k, $('newPw').value);
+  if (p.uid) {
+    // 온라인 계정은 서버 비밀번호도 같이 바꿔야 함 (인터넷 필요)
+    if (!online()) { msg('settingsMsg', '비밀번호를 바꾸려면 인터넷이 될 때 다시 로그인해 주세요.'); return; }
+    try {
+      await cloud.changePassword(online(), { id: p.name, password: $('newPw').value, enc: encNew });
+      await keepSession();
+    } catch (e) {
+      msg('settingsMsg', e instanceof OfflineError ? NEED_NET : e.message);
+      return;
+    }
+  }
+  p.enc = encNew;
   await saveProfiles();
   for (const id of ['oldPw', 'newPw', 'newPw2']) $(id).value = '';
   toggleBox('changePwBox', 'btnChangePw', false);
@@ -314,7 +464,12 @@ async function changePassword() {
 async function deleteProfile() {
   const p = me();
   if (!p || running) return;
-  if (!confirm(`“${p.name}”을 지울까요? 이 사람의 키와 책 진행 기록이 이 컴퓨터에서 지워져요.`)) return;
+  if (p.uid && !online()) { msg('settingsMsg', '계정을 지우려면 인터넷이 될 때 다시 로그인해 주세요.'); return; }
+  if (!confirm(`“${p.name}” 계정을 지울까요? 온라인 계정과 이 컴퓨터의 키·책 진행 기록이 모두 지워져요.`)) return;
+  if (p.uid) {
+    try { await cloud.deleteAccount(online()); } catch (e) { msg('settingsMsg', e instanceof OfflineError ? NEED_NET : e.message); return; }
+  }
+  await chrome.storage.local.remove(pendKey(p.id));
   await chrome.storage.local.remove(profileDataKeys(await chrome.storage.local.get(null), p.id));
   profiles = profiles.filter((x) => x.id !== p.id);
   await saveProfiles();
@@ -1472,7 +1627,6 @@ $('gateSignup').addEventListener('submit', (e) => { e.preventDefault(); signup()
 $('toSignup').addEventListener('click', () => gateStep('signup'));
 $('toLogin').addEventListener('click', () => gateStep('login'));
 $('btnForgot').addEventListener('click', () => toggleBox('forgotBox'));
-$('btnReset').addEventListener('click', resetProfile);
 $('legacyKey').addEventListener('change', () => $('newKeyFld').classList.toggle('hidden', !!$('legacyKey').value));
 // 쓰는 동안은 자동 로그아웃 시계를 늦춤
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, touch, { capture: true, passive: true });
@@ -1482,6 +1636,7 @@ setInterval(() => {
 // 다른 창에서 로그아웃·로그인하면 이 창도 따라감 (교정 중인 창은 끝날 때까지 그대로)
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch.profiles) profiles = ch.profiles.newValue || [];
+  if (area === 'session' && ch.cloud) cloudSes = ch.cloud.newValue || null;
   if (area !== 'session' || !ch.unlock) return;
   const u = ch.unlock.newValue;
   if (u?.pid === unlocked?.pid && u?.key === unlocked?.key) { unlocked = u; return; }

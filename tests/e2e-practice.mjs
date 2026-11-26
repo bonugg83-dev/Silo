@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { fakeFirebase } from './fake-firebase.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -19,6 +20,7 @@ const context = await chromium.launchPersistentContext(fs.mkdtempSync('/tmp/clau
   headless: true, channel: 'chromium',
   args: [`--disable-extensions-except=${extPath}`, `--load-extension=${extPath}`],
 });
+await fakeFirebase('TESTCODE').install(context);
 await context.route(/mypickebook\.org/, (route) => { siteRequests.push(route.request().url()); return route.abort(); });
 let lastPage = 0;
 await context.route('https://api.anthropic.com/**', async (route) => {
@@ -57,10 +59,12 @@ panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 panel.on('dialog', (d) => d.accept());
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.click('#toSignup');
 await panel.fill('#newName', '연습');
 await panel.fill('#newPw1', '1234');
 await panel.fill('#newPw1b', '1234');
 await panel.fill('#newKey', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
+await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 await panel.click('#btnOpenSettings');

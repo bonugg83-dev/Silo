@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Silo",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 주는 교정 도우미입니다.",
   "permissions": [
     "sidePanel",
@@ -15,7 +15,10 @@
     "https://mypickebook.org/*",
     "http://www.mypickebook.org/*",
     "http://mypickebook.org/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"
