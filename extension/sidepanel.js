@@ -6,11 +6,13 @@ import {
 import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
+  pageFetchMyFeedback,
 } from './lib/page.js';
 import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize, displayText } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
 import { fixPageKind, tableFlags, hasSubscriptNote } from './lib/special.js';
+import { parseBookList, parseFeedPopup, mergeFeedback, feedbackDigest } from './lib/feedback.js';
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
 import { tidyMessage, sortReview, reviewCounts } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
@@ -645,6 +647,52 @@ async function getEditorTab() {
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
     : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “연습 페이지 열기”를 누르세요.');
 }
+// ---------- 관리자 피드백 ----------
+// chrome.storage.local "feedback": {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
+const FEEDBACK_EVERY_MS = 12 * 60 * 60 * 1000;
+async function loadFeedback() {
+  const { feedback } = await chrome.storage.local.get('feedback');
+  return { list: [], counts: {}, at: 0, pushed: [], shared: [], sharedAt: 0, ...(feedback || {}) };
+}
+let feedbackBusy = null;
+/** 마이픽 마이페이지에서 피드백을 읽어 와 저장하고, 새 것은 모두의 목록에 올리고, 모두의 목록을 받아 둔다 */
+function syncFeedback({ manual = false } = {}) {
+  if (feedbackBusy) return feedbackBusy;
+  feedbackBusy = (async () => {
+    const fb = await loadFeedback();
+    if (!manual && Date.now() - fb.at < FEEDBACK_EVERY_MS) return { fb, added: 0, skipped: true };
+    const tabs = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs.find((x) => x.id === active?.id) || tabs[0];
+    if (!tab) throw new Error('마이픽 사이트 창이 열려 있어야 피드백을 가져올 수 있어요.');
+    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: pageFetchMyFeedback, args: [fb.counts] });
+    const got = r?.result;
+    if (!got) throw new Error('피드백 화면을 읽지 못했어요.');
+    const titles = Object.fromEntries(got.lists.flatMap(parseBookList).map((b) => [b.idx, b]));
+    const items = Object.entries(got.pops).flatMap(([idx, htmls]) => htmls.flatMap(parseFeedPopup)
+      .map((f) => ({ ...f, idx, title: titles[idx]?.title || '' })));
+    const { list, added } = mergeFeedback(fb.list, items);
+    const next = { ...fb, list, counts: { ...fb.counts, ...got.counts }, at: Date.now() };
+    // 모두의 목록: 새로 받은 피드백 올리기(내용·유형만), 모두의 것 받기
+    const key = (f) => `${f.idx}:${f.page}:${f.text}`;
+    const toPush = list.filter((f) => !next.pushed.includes(key(f)));
+    if (toPush.length && await quietly((s) => cloud.pushFeedback(s, toPush))) next.pushed = [...next.pushed, ...toPush.map(key)];
+    await quietly(async (s) => { next.shared = await cloud.listFeedback(s); next.sharedAt = Date.now(); });
+    await chrome.storage.local.set({ feedback: next });
+    paintFeedback(next);
+    return { fb: next, added: added.length };
+  })().finally(() => { feedbackBusy = null; });
+  return feedbackBusy;
+}
+function paintFeedback(fb) {
+  const el = $('feedbackInfo');
+  if (!el || !fb) return;
+  const when = fb.at ? new Date(fb.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  el.textContent = fb.at
+    ? `내 피드백 ${fb.list.length}건${fb.shared.length ? ` · 모두의 피드백 ${fb.shared.length}가지` : ''} · ${when}에 가져옴`
+    : '아직 가져오지 않았어요.';
+}
+
 async function runInPage(tabId, func, args = []) {
   const tab = await chrome.tabs.get(tabId);
   if (isPracticeUrl(tab.url)) {
@@ -809,6 +857,7 @@ async function analyze() {
   const pendingFootnotes = [info.currPage - 2, info.currPage - 1]
     .flatMap((p) => (book.pages[p]?.footMissing || []).filter((l) => !linked.has(`${p}:${l}`)).map((l) => `${p}쪽 [${l}]`))
     .join(', ');
+  syncFeedback().catch(() => {}); // 12시간에 한 번, 기다리지 않음 (이번 쪽에는 저장된 피드백을 씀)
   const ctx = {
     bookInfo: info.bookInfo,
     tip: info.tipText + (info.tipImages?.length ? '\n(제작 Tip에 이미지가 있어요. 이미지 내용은 볼 수 없으니 관련 판단이 필요하면 flags에 적으세요.)' : ''),
@@ -824,6 +873,7 @@ async function analyze() {
     dashSpacing: settings.dashSpacing,
     pendingFootnotes,
     subscriptNoteUsed: subscriptNoteUsed(book, info),
+    adminFeedback: await (async () => { const fb = await loadFeedback(); return feedbackDigest(fb.list, fb.shared); })(),
     imageWidth: sent.width,
     imageHeight: sent.height,
     zoomed: false,
@@ -2044,6 +2094,20 @@ async function openPractice() {
   }
 }
 $('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
+$('btnFeedback').addEventListener('click', async () => {
+  const b = $('btnFeedback');
+  b.disabled = true;
+  $('feedbackInfo').textContent = '마이픽에서 피드백을 읽는 중…';
+  try {
+    const r = await syncFeedback({ manual: true });
+    paintFeedback(r.fb);
+    msg('settingsMsg', r.added ? `새 피드백 ${r.added}건을 가져왔어요. 다음 쪽부터 반영해요.` : '새 피드백이 없어요.');
+  } catch (e) {
+    paintFeedback(await loadFeedback());
+    msg('settingsMsg', e.message);
+  } finally { b.disabled = false; }
+});
+loadFeedback().then(paintFeedback);
 
 chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });

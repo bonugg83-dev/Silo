@@ -40,7 +40,8 @@ function verifyFor(page) {
     return { fixes: [
       { find: '큰 별', replace: '큰 별이여', reason: '원본에 “이여”가 있음' },
       { find: '없는 구절', replace: 'x', reason: '테스트' },
-    ], flags: [] };
+    // 1차의 불확실 표시는 2차가 다시 보면 지워지고, 2차도 모르겠다고 한 것만 남는다
+    ], flags: [{ kind: 'uncertain_text', message: '매력 글자가 흐려요(확대본으로도)', quote: '매력', needs_review: false }] };
   }
   return { fixes: [], flags: [] };
 }
@@ -59,6 +60,7 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 });
 await fakeFirebase('TESTCODE').install(context);
 
+const feedbackFetches = [];
 await context.route('https://www.mypickebook.org/**', async (route) => {
   const url = new URL(route.request().url());
   if (url.pathname === '/making/make_book.html') {
@@ -90,6 +92,9 @@ await context.route('https://www.mypickebook.org/**', async (route) => {
       <div><img src="/common/file.php?toc=${p}" style="max-width:100%;"></div></div></body></html>`;
     return route.fulfill({ status: 200, contentType: 'text/html', body });
   }
+  // 관리자 피드백: 마이페이지 봉사실적 표와 피드백 팝업 (실제 저장본)
+  if (url.pathname === '/mypage/book.html') { feedbackFetches.push(url.search); return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(here, 'fixtures/mypage_book.html')) }); }
+  if (url.pathname === '/mypage/pop_feed.html') { feedbackFetches.push(url.search); return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(here, 'fixtures/pop_feed.html')) }); }
   if (url.pathname === '/common/file.php') return route.fulfill({ status: 200, contentType: 'image/jpeg', body: pageImg });
   if (url.pathname === '/making/make_save_proc.php') {
     saves.push({ ...JSON.parse(route.request().postData()), at: Date.now() });
@@ -481,6 +486,14 @@ await panel.click('#btnOpenSettings');
 await panel.waitForTimeout(500);
 const sb = await panel.locator('#settings').boundingBox();
 assert.ok(Math.abs(sb.x) < 2, '설정 열림');
+// 관리자 피드백: 교정할 때 이미 한 번 가져왔고(12시간에 한 번), 지침에 들어감. 가져오기 버튼은 바뀐 것만 다시 읽음
+assert.ok(feedbackFetches.includes('?idx=319679'), '피드백 팝업을 읽음');
+assert.match(await panel.textContent('#feedbackInfo'), /내 피드백 2건 · 모두의 피드백 2가지/);
+assert.ok(apiCalls.some((c) => /<admin_feedback>[\s\S]*기호로 된 각주는/.test(c.body.system?.[1]?.text || '')), '피드백이 교정 지침에 들어감');
+const fetchedBefore = feedbackFetches.length;
+await panel.click('#btnFeedback');
+await panel.waitForFunction(() => /새 피드백이 없어요/.test(document.querySelector('#settingsMsg').textContent));
+assert.ok(!feedbackFetches.slice(fetchedBefore).some((q) => q.includes('idx=')), '건수가 그대로인 책은 팝업을 다시 안 읽음');
 await panel.click('#btnCloseSettings');
 
 if (process.env.SHOT) { await panel.screenshot({ path: process.env.SHOT, fullPage: true }); }

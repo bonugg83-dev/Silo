@@ -266,3 +266,44 @@ export function pageGoto(bookPage) {
   setTimeout(() => { location.href = u.href; }, 50);
   return { ok: true, url: u.href };
 }
+
+/**
+ * 마이페이지 봉사실적 표와, 피드백이 있는 책마다 피드백 팝업 HTML을 가져온다 (로그인된 사이트 창에서 실행).
+ * 쪽이 여러 개면 ?page=2… 를 같은 내용이 나올 때까지(최대 10쪽, 팝업은 5쪽) 읽는다.
+ * @param {Record<string, number>} known 이미 읽은 책 idx → 그때의 피드백 수 (수가 그대로면 팝업을 다시 읽지 않음)
+ */
+export async function pageFetchMyFeedback(known = {}) {
+  const get = async (url) => {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.text();
+  };
+  const bodyOf = (h) => ((/<tbody[^>]*>([\s\S]*?)<\/tbody>/i.exec(h) || [])[1] || '').replace(/\s+/g, ' ');
+  async function pages(base, max) {
+    const out = [];
+    let prev = null;
+    for (let n = 1; n <= max; n++) {
+      const h = await get(base + (n > 1 ? (base.includes('?') ? '&' : '?') + 'page=' + n : ''));
+      const b = bodyOf(h);
+      if (!/<td/i.test(b) || b === prev) break;
+      out.push(h);
+      prev = b;
+    }
+    return out;
+  }
+  const lists = await pages('/mypage/book.html', 10);
+  if (lists.length && /member\/login|name="user_id"|로그인\s*<\/h/i.test(lists[0]) && !/feed_btn|봉사실적/.test(lists[0])) {
+    throw new Error('마이픽에 로그인되어 있지 않아요.');
+  }
+  const counts = {};
+  for (const h of lists) {
+    for (const m of h.matchAll(/pop_feed\.html\?idx=(\d+)[^>]*>\s*(\d+)\s*건/g)) counts[m[1]] = Number(m[2]);
+    for (const m of h.matchAll(/pop_feed\.html\?idx=(\d+)/g)) if (!(m[1] in counts)) counts[m[1]] = 0;
+  }
+  const pops = {};
+  for (const id of Object.keys(counts)) {
+    if (counts[id] && known[id] === counts[id]) continue;
+    pops[id] = await pages('/mypage/pop_feed.html?idx=' + encodeURIComponent(id), 5);
+  }
+  return { lists, pops, counts };
+}

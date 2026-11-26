@@ -185,12 +185,57 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
       const d = await getDoc(s, `/cost/${month}`);
       return monthFromDoc(d);
     },
+    /**
+     * 관리자 피드백을 모두의 목록(feedback/{내용 해시})에 더한다. 사람·책 정보는 보내지 않고 내용과 유형만.
+     * 같은 내용이면 count만 늘어난다.
+     */
+    async pushFeedback(s, items) {
+      if (!items?.length) return 0;
+      await fresh(s);
+      const writes = [];
+      for (const it of items) {
+        const text = String(it.text || '').slice(0, 1500);
+        const id = (await sha256Hex(feedbackKeyOf(text))).slice(0, 40);
+        const name = `projects/${FIREBASE.projectId}/databases/(default)/documents/feedback/${id}`;
+        writes.push({
+          update: { name, fields: toFields({ text, type: String(it.type || '기타').slice(0, 40) }) },
+          updateMask: { fieldPaths: ['text', 'type'] },
+          updateTransforms: [{ fieldPath: 'count', increment: { integerValue: '1' } }],
+        });
+      }
+      for (let i = 0; i < writes.length; i += 200) {
+        await call(`${DOCS}:commit`, json('POST', { writes: writes.slice(i, i + 200) }, s.idToken));
+      }
+      return writes.length;
+    },
+    /** 모두의 피드백 [{text, type, count}] (많이 받은 순) */
+    async listFeedback(s) {
+      await fresh(s);
+      const out = [];
+      let token = '';
+      for (let i = 0; i < 5; i++) {
+        const r = await call(`${DOCS}/feedback?pageSize=300${token ? `&pageToken=${encodeURIComponent(token)}` : ''}`, json('GET', undefined, s.idToken));
+        for (const d of r.documents || []) {
+          const f = fromFields(d.fields);
+          if (f.text) out.push({ text: String(f.text), type: String(f.type || '기타'), count: Number(f.count) || 1 });
+        }
+        token = r.nextPageToken;
+        if (!token) break;
+      }
+      return out.sort((a, b) => b.count - a.count);
+    },
     async deleteAccount(s) {
       await fresh(s);
       await call(doc(s, ''), json('DELETE', undefined, s.idToken)).catch(() => {});
       await auth('delete', { idToken: s.idToken });
     },
   };
+}
+
+const feedbackKeyOf = (text) => String(text ?? '').normalize('NFC').replace(/[\s.,!?·…'"“”‘’()\[\]]/g, '').toLowerCase();
+async function sha256Hex(s) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 
 function safeParse(t) { try { return JSON.parse(t); } catch { return null; } }

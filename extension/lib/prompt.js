@@ -208,6 +208,7 @@ export function buildBookBlock(ctx) {
   t += section('book', ctx.bookInfo);
   t += section('production_tip', ctx.tip);
   t += section('table_of_contents', ctx.toc);
+  t += section('admin_feedback', ctx.adminFeedback ? `마이픽 관리자가 봉사자들에게 준 피드백입니다(많이 받은 순). 같은 실수를 하지 않게 이 책의 모든 쪽에서 지키세요. 위 규칙과 다르면 피드백을 따르세요.\n${ctx.adminFeedback}` : '');
   t += section('dash_spacing', ctx.dashSpacing === 'keep'
     ? '이 책은 줄표 앞뒤 띄어쓰기를 원본대로 유지합니다.'
     : '줄표(―) 앞뒤는 붙여 씁니다.');
