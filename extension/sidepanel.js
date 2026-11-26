@@ -17,14 +17,17 @@ import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
-import { playSplash } from './lib/splash.js';
+import { playSplash, setupBrand } from './lib/splash.js';
+import {
+  AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
+  bookKey, costKey, costPagesKey, costMonthKey, runLockKey, legacyMigration, profileDataKeys, lockExpired, overLimit, runLockedByOther,
+} from './lib/profiles.js';
 
 const $ = (id) => document.getElementById(id);
 const TOC_VERSION = 2;
 
 const DEFAULT_SETTINGS = {
-  keys: [], // [{id, name, key}]
-  activeKeyId: '',
+  keys: [], // 예전 버전(계정 없던 때)의 평문 키. 회원가입 때 골라 쓰면 지움
   model: 'claude-opus-5-5',
   effort: 'high',
   verify: true,
@@ -53,113 +56,264 @@ let autoRunning = false;
 let running = false; // 교정하기가 도는 중 (한 쪽 또는 자동모드)
 let stopReq = false; // 교정 중에 교정하기를 한 번 더 눌러 멈추기를 요청함
 let abort = null;
-// 오늘 쓴 비용 (설정 탭에 합계)
+// ---------- 교정자 프로필 (lib/profiles.js) ----------
+let profiles = []; // chrome.storage.local "profiles"
+let unlocked = null; // {pid, key, lastUsed} (chrome.storage.session "unlock")
+let runPid = ''; // 교정이 도는 동안 고정한 프로필과 키
+let runKey = '';
+const PANEL_ID = crypto.randomUUID();
+
+const pid = () => runPid || unlocked?.pid || '';
+const me = () => profiles.find((p) => p.id === pid());
+async function saveProfiles() { await chrome.storage.local.set({ profiles }); }
+function paintAvatar(el, p) {
+  if (!el) return;
+  const [bg, fg] = AVATAR_COLORS[(p?.color || 0) % AVATAR_COLORS.length];
+  el.style.background = bg;
+  el.style.color = fg;
+  el.textContent = (p?.name || '?').trim().slice(0, 1);
+}
+async function setLockState(on) {
+  const st = on ? { activeProfileId: unlocked.pid, lockState: { pid: unlocked.pid, unlocked: true, at: Date.now() } }
+    : { lockState: { pid: (await chrome.storage.local.get('activeProfileId')).activeProfileId || '', unlocked: false, at: Date.now() } };
+  await chrome.storage.local.set(st);
+}
+async function openProfile(p, apiKey) {
+  unlocked = { pid: p.id, key: apiKey, lastUsed: Date.now() };
+  await chrome.storage.session.set({ unlock: unlocked });
+  await setLockState(true);
+  await chrome.storage.local.set({ lastLoginId: p.name });
+  showGate(false);
+  fillForms();
+  showTodayCost();
+  refreshStatus();
+}
+async function lock() {
+  if (running) { msg('settingsMsg', '교정이 끝난 뒤 로그아웃할 수 있어요.'); return; }
+  unlocked = null;
+  await chrome.storage.session.remove('unlock');
+  await setLockState(false);
+  setSettingsOpen(false);
+  resetBox();
+  showGate(true);
+}
+let lastTouch = 0;
+function touch() {
+  if (!unlocked || Date.now() - lastTouch < 20000) return;
+  lastTouch = unlocked.lastUsed = Date.now();
+  chrome.storage.session.set({ unlock: unlocked });
+}
+async function restoreUnlock() {
+  const r = await chrome.storage.session.get('unlock');
+  const u = r.unlock;
+  const p = profiles.find((x) => x.id === u?.pid);
+  if (u && p && !lockExpired(u, p)) unlocked = u;
+  else if (u) await chrome.storage.session.remove('unlock');
+}
+
+// 로그인 · 회원가입 화면 (로그인해야 앱을 쓸 수 있음)
+const findAccount = (id) => profiles.find((p) => p.name.toLowerCase() === (id || '').trim().toLowerCase());
+function gateStep(step) {
+  $('gateLogin').classList.toggle('hidden', step !== 'login');
+  $('gateSignup').classList.toggle('hidden', step !== 'signup');
+  $('gateMsg').textContent = '';
+  if (step === 'signup') prepSignup();
+  setTimeout(() => (step === 'login' ? ($('loginId').value ? $('loginPw') : $('loginId')) : $('newName')).focus(), 50);
+}
+function showGate(on) {
+  document.body.classList.toggle('auth-open', on);
+  $('gate').inert = !on;
+  $('gate').setAttribute('aria-hidden', String(!on));
+  $('work').inert = on || document.body.classList.contains('settings-open');
+  if (!on) return;
+  $('loginPw').value = '';
+  $('forgotBox').classList.remove('open');
+  chrome.storage.local.get('lastLoginId').then((r) => { if (!$('loginId').value) $('loginId').value = r.lastLoginId || ''; });
+  gateStep(profiles.length ? 'login' : 'signup');
+}
+function prepSignup() {
+  // 예전 버전에 그냥 저장해 둔 키가 있으면 골라 쓸 수 있게
+  const sel = $('legacyKey');
+  sel.innerHTML = '';
+  for (const k of settings.keys) sel.add(new Option(`예전에 저장한 키: ${k.name} (${maskKey(k.key)})`, k.id));
+  if (settings.keys.length) sel.add(new Option('새 키 넣기', ''));
+  $('legacyFld').classList.toggle('hidden', !settings.keys.length);
+  $('newKeyFld').classList.toggle('hidden', !!settings.keys.length && !!sel.value);
+  $('signupSub').textContent = profiles.length
+    ? '이 컴퓨터에 계정을 하나 더 만들어요. API 키는 비밀번호로 잠가 저장해요.'
+    : '처음이시네요. 이 컴퓨터에 계정을 만들어요. API 키는 비밀번호로 잠가 저장해요.';
+}
+async function signup() {
+  const name = $('newName').value.trim();
+  const legacy = settings.keys.find((k) => k.id === $('legacyKey').value);
+  const apiKey = legacy ? legacy.key : $('newKey').value.trim();
+  const pw = $('newPw1').value;
+  const bad = !/^[A-Za-z0-9가-힣_.-]{2,20}$/.test(name) ? '아이디는 영문, 숫자, 한글로 2~20자예요.'
+    : findAccount(name) ? '이미 있는 아이디예요.'
+      : checkPassword(pw, $('newPw1b').value)
+        || (!isApiKey(apiKey) ? 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.' : '');
+  if (bad) { $('gateMsg').textContent = bad; return; }
+  $('gateMsg').textContent = '키를 잠그는 중…';
+  const first = !profiles.length;
+  const p = await makeProfile({ name, apiKey, password: pw, index: profiles.length });
+  profiles.push(p);
+  await saveProfiles();
+  if (first) {
+    // 계정이 없던 때의 책·비용 기록은 처음 만든 계정 것으로
+    const plan = legacyMigration(await chrome.storage.local.get(null), p.id);
+    if (Object.keys(plan.set).length) await chrome.storage.local.set(plan.set);
+    if (plan.remove.length) await chrome.storage.local.remove(plan.remove);
+  }
+  if (legacy) {
+    settings.keys = settings.keys.filter((k) => k.id !== legacy.id);
+    await persist();
+  }
+  for (const id of ['newName', 'newPw1', 'newPw1b', 'newKey']) $(id).value = '';
+  await openProfile(p, apiKey);
+}
+async function login() {
+  const p = findAccount($('loginId').value);
+  if (!p) { $('gateMsg').textContent = '없는 아이디예요. 처음이면 회원가입을 눌러 주세요.'; return; }
+  $('gateMsg').textContent = '로그인하는 중…';
+  const k = await decryptKey(p.enc, $('loginPw').value);
+  if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
+  await openProfile(p, k);
+}
+async function resetProfile() {
+  const p = findAccount($('loginId').value);
+  if (!p) { $('gateMsg').textContent = '위 아이디 칸에 아이디를 넣어 주세요.'; return; }
+  const apiKey = $('resetKey').value.trim();
+  const bad = !isApiKey(apiKey) ? 'API 키 형식이 아니에요.' : checkPassword($('resetPw').value, $('resetPw2').value);
+  if (bad) { $('gateMsg').textContent = bad; return; }
+  p.enc = await encryptKey(apiKey, $('resetPw').value);
+  p.mask = maskKey(apiKey);
+  await saveProfiles();
+  for (const id of ['resetKey', 'resetPw', 'resetPw2']) $(id).value = '';
+  await openProfile(p, apiKey);
+}
+
+// ---------- 비용 (프로필별) ----------
+async function monthUsd(id = pid()) {
+  const k = costMonthKey(id);
+  return (await chrome.storage.local.get(k))[k] || 0;
+}
 async function addCost(usd) {
-  if (!usd) return;
-  const key = `cost:${new Date().toLocaleDateString('sv')}`;
-  const r = await chrome.storage.local.get(key);
-  await chrome.storage.local.set({ [key]: (r[key] || 0) + usd });
+  if (!usd || !pid()) return;
+  const k = costKey(pid());
+  const mk = costMonthKey(pid());
+  const r = await chrome.storage.local.get([k, mk]);
+  await chrome.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
+  // 월 한도에 닿으면 자동모드는 이 쪽까지만
+  if (autoRunning && overLimit(me(), (r[mk] || 0) + usd)) {
+    autoRunning = false;
+    setProgress(`이번 달 한도($${me().monthlyLimit})에 닿아서 이 쪽까지만 하고 멈춰요.`);
+  }
   showTodayCost();
 }
 /** 쪽 하나 교정이 끝날 때: 쪽당 평균과 토큰 기록 (비용 비교용, 최근 300쪽) */
 async function logPage(entry) {
-  const day = `costpages:${new Date().toLocaleDateString('sv')}`;
+  const day = costPagesKey(pid());
   const r = await chrome.storage.local.get([day, 'usageLog']);
-  const log = [...(r.usageLog || []), { at: Date.now(), ...entry }].slice(-300);
+  const log = [...(r.usageLog || []), { at: Date.now(), pid: pid(), ...entry }].slice(-300);
   await chrome.storage.local.set({ [day]: (r[day] || 0) + 1, usageLog: log });
   showTodayCost();
 }
+const won = (usd) => `약 ${Math.round(usd * 1450).toLocaleString()}원`;
 async function showTodayCost() {
-  const d = new Date().toLocaleDateString('sv');
-  const r = await chrome.storage.local.get([`cost:${d}`, `costpages:${d}`]);
-  const usd = r[`cost:${d}`] || 0;
-  const pages = r[`costpages:${d}`] || 0;
-  $('todayCost').textContent = `오늘 쓴 비용 약 $${usd.toFixed(2)} (약 ${Math.round(usd * 1450).toLocaleString()}원)`
-    + (pages ? ` · ${pages}쪽, 쪽당 약 ${Math.round((usd * 1450) / pages).toLocaleString()}원` : '');
+  if (!pid()) return;
+  const r = await chrome.storage.local.get([costKey(pid()), costPagesKey(pid()), costMonthKey(pid())]);
+  const usd = r[costKey(pid())] || 0;
+  const pages = r[costPagesKey(pid())] || 0;
+  const month = r[costMonthKey(pid())] || 0;
+  $('costToday').textContent = `$${usd.toFixed(2)}`;
+  $('costTodayWon').textContent = won(usd);
+  $('costMonth').textContent = `$${month.toFixed(2)}`;
+  $('costMonthWon').textContent = won(month);
+  $('todayCost').textContent = pages ? `오늘 ${pages}쪽, 쪽당 ${won(usd / pages)}` : '';
+  const lim = Number(me()?.monthlyLimit) || 0;
+  $('limitBar').classList.toggle('hidden', !lim);
+  $('limitBar').classList.toggle('over', overLimit(me(), month));
+  $('limitFill').style.width = lim ? `${Math.min(100, (month / lim) * 100)}%` : '0';
 }
 let editing = false;
 
 // ---------- 설정 ----------
 async function loadSettings() {
-  const s = await chrome.storage.local.get('settings');
+  const s = await chrome.storage.local.get(['settings', 'profiles']);
   const raw = s.settings || {};
+  profiles = s.profiles || [];
   settings = { ...DEFAULT_SETTINGS, ...raw };
-  // 예전 버전: 키 하나(apiKey) → 이름 붙은 키 목록
+  // 예전 버전: 키 하나(apiKey) → 이름 붙은 키 목록 (프로필로 옮기기 전까지만 둠)
   if (raw.apiKey && !(raw.keys && raw.keys.length)) {
-    const id = crypto.randomUUID();
-    settings.keys = [{ id, name: '내 키', key: raw.apiKey }];
-    settings.activeKeyId = id;
+    settings.keys = [{ id: crypto.randomUUID(), name: '내 키', key: raw.apiKey }];
   }
   delete settings.apiKey;
+  delete settings.activeKeyId;
   // 화면에서 뺀 설정은 기본값으로 고정
   Object.assign(settings, { effort: 'high', useToc: true, imageMax: 2000, unitSymbols: true, runThrough: true, timeWarnMin: 0 });
-  if (!settings.keys.find((k) => k.id === settings.activeKeyId)) settings.activeKeyId = settings.keys[0]?.id || '';
   await chrome.storage.local.set({ settings });
 }
 async function persist() {
   await chrome.storage.local.set({ settings });
 }
 function activeKey() {
-  return settings.keys.find((k) => k.id === settings.activeKeyId)?.key || '';
-}
-const maskKey = (k) => (k ? `${k.slice(0, 7)}…${k.slice(-4)}` : '');
-
-function renderKeys() {
-  const box = $('keyList');
-  box.innerHTML = '';
-  if (!settings.keys.length) {
-    box.innerHTML = '<p class="note">저장된 키가 없어요. 키 추가를 눌러 넣어 주세요.</p>';
-  }
-  for (const k of settings.keys) {
-    const row = document.createElement('div');
-    row.className = 'key-row';
-    const label = document.createElement('label');
-    const radio = document.createElement('input');
-    radio.type = 'radio';
-    radio.name = 'activeKey';
-    radio.checked = k.id === settings.activeKeyId;
-    radio.addEventListener('change', async () => { settings.activeKeyId = k.id; await persist(); msg('settingsMsg', `“${k.name}”을 사용해요.`); });
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = k.name;
-    name.title = maskKey(k.key);
-    label.append(radio, name);
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'del';
-    del.textContent = '×';
-    del.setAttribute('aria-label', `${k.name} 삭제`);
-    del.addEventListener('click', async () => {
-      if (!confirm(`“${k.name}” 키를 삭제할까요?`)) return;
-      settings.keys = settings.keys.filter((x) => x.id !== k.id);
-      if (settings.activeKeyId === k.id) settings.activeKeyId = settings.keys[0]?.id || '';
-      await persist();
-      renderKeys();
-      msg('settingsMsg', '키를 삭제했어요.');
-    });
-    row.append(label, del);
-    box.appendChild(row);
-  }
-}
-function openAddKey(on) {
-  $('addKeyBox').classList.toggle('open', on);
-  $('btnAddKey').classList.toggle('white', on);
-  if (on) setTimeout(() => $('newKeyName').focus(), 50);
+  return runKey || unlocked?.key || '';
 }
 
-async function addKey() {
-  const name = $('newKeyName').value.trim() || `키 ${settings.keys.length + 1}`;
-  const key = $('newKeyValue').value.trim();
-  if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)) { msg('settingsMsg', 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.'); return; }
-  const id = crypto.randomUUID();
-  settings.keys.push({ id, name, key });
-  settings.activeKeyId = id;
-  await persist();
-  $('newKeyName').value = '';
+function renderMe() {
+  const p = me();
+  if (!p) return;
+  paintAvatar($('meAvatar'), p);
+  $('meName').textContent = p.name;
+  $('meSub').textContent = '로그인 중';
+  $('meKey').textContent = p.mask;
+  $('monthlyLimit').value = p.monthlyLimit || 0;
+  const sel = $('lockAfter');
+  if (!sel.options.length) for (const o of LOCK_OPTIONS) sel.add(new Option(o.label, String(o.min)));
+  sel.value = String(p.lockAfterMin ?? 30);
+}
+function toggleBox(box, btn, on = !$(box).classList.contains('open')) {
+  $(box).classList.toggle('open', on);
+  if (btn) $(btn).classList.toggle('white', on);
+  if (on) setTimeout(() => $(box).querySelector('input')?.focus(), 50);
+}
+async function changeKey() {
+  const p = me();
+  const apiKey = $('newKeyValue').value.trim();
+  if (!isApiKey(apiKey)) { msg('settingsMsg', 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.'); return; }
+  const pw = $('changeKeyPw').value;
+  if (!(await decryptKey(p.enc, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  p.enc = await encryptKey(apiKey, pw);
+  p.mask = maskKey(apiKey);
+  await saveProfiles();
+  unlocked.key = apiKey;
+  await chrome.storage.session.set({ unlock: unlocked });
   $('newKeyValue').value = '';
-  renderKeys();
-  openAddKey(false);
-  msg('settingsMsg', `“${name}”을 저장하고 사용 키로 골랐어요.`);
+  $('changeKeyPw').value = '';
+  toggleBox('changeKeyBox', 'btnChangeKey', false);
+  renderMe();
+  msg('settingsMsg', '키를 바꿨어요.');
+}
+async function changePassword() {
+  const p = me();
+  const k = await decryptKey(p.enc, $('oldPw').value);
+  if (!k) { msg('settingsMsg', '지금 비밀번호가 맞지 않아요.'); return; }
+  const bad = checkPassword($('newPw').value, $('newPw2').value);
+  if (bad) { msg('settingsMsg', bad); return; }
+  p.enc = await encryptKey(k, $('newPw').value);
+  await saveProfiles();
+  for (const id of ['oldPw', 'newPw', 'newPw2']) $(id).value = '';
+  toggleBox('changePwBox', 'btnChangePw', false);
+  msg('settingsMsg', '비밀번호를 바꿨어요.');
+}
+async function deleteProfile() {
+  const p = me();
+  if (!p || running) return;
+  if (!confirm(`“${p.name}”을 지울까요? 이 사람의 키와 책 진행 기록이 이 컴퓨터에서 지워져요.`)) return;
+  await chrome.storage.local.remove(profileDataKeys(await chrome.storage.local.get(null), p.id));
+  profiles = profiles.filter((x) => x.id !== p.id);
+  await saveProfiles();
+  await lock();
 }
 
 const ADV_FIELDS = {
@@ -171,7 +325,7 @@ function fillForms() {
   for (const m of MODELS) sel.add(new Option(m.label, m.id));
   sel.value = settings.model;
   for (const [id, prop] of Object.entries(ADV_FIELDS)) $(id)[prop] = settings[id];
-  renderKeys();
+  renderMe();
 }
 async function saveAdvanced() {
   for (const [id, prop] of Object.entries(ADV_FIELDS)) {
@@ -350,7 +504,7 @@ function fmtTime(sec) {
 
 // ---------- 책별 기록 ----------
 async function getBook(bookIdx) {
-  const key = `book:${bookIdx}`;
+  const key = bookKey(pid(), bookIdx);
   const s = await chrome.storage.local.get(key);
   const book = s[key] || { pages: {}, toc: null };
   // 첫 버전이 저장한 엉뚱한 목차(단계 표시 없음)는 버린다
@@ -362,7 +516,7 @@ async function getBook(bookIdx) {
 }
 async function putBook(bookIdx, book) {
   book.lastOpened = Date.now();
-  await chrome.storage.local.set({ [`book:${bookIdx}`]: book });
+  await chrome.storage.local.set({ [bookKey(pid(), bookIdx)]: book });
 }
 /** 2일 동안 열지 않은 책의 기록을 지운다 */
 async function cleanupBooks() {
@@ -460,7 +614,7 @@ async function analyze() {
   setError('');
   if (reviewOpen()) await showReview(false);
   const tab = await getEditorTab();
-  if (!activeKey()) throw new Error('API 키가 없어요. 설정(☰)에서 Claude API 키를 추가해 주세요.');
+  if (!activeKey()) throw new Error('로그인해 주세요.');
   abort = new AbortController();
   if (editing) setEditMode(false);
   setProgress('');
@@ -1084,7 +1238,7 @@ async function autoLoop() {
   // 시작 전에 목차부터 (없으면 제목 단계가 틀리기 쉬움)
   const st0 = await refreshStatus();
   if (!st0) throw new Error(lastStatusError || '편집 화면을 찾지 못했어요.');
-  if (!activeKey()) throw new Error('API 키가 없어요. 설정(☰)에서 Claude API 키를 추가해 주세요.');
+  if (!activeKey()) throw new Error('로그인해 주세요.');
   if (settings.useToc) {
     abort = new AbortController();
     const book0 = await getBook(st0.info.bookIdx);
@@ -1140,6 +1294,17 @@ function guard(fn) {
 const autoOn = () => $('btnAuto').getAttribute('aria-checked') === 'true';
 /** 교정하기: 자동모드가 켜져 있으면 쪽을 넘기며 계속, 꺼져 있으면 이 쪽만 */
 async function startRun() {
+  if (!unlocked) { showGate(true); return; }
+  // 교정이 도는 동안은 계정과 키를 고정 (중간에 다른 계정으로 바뀌어도 이 책은 이 키로)
+  const lockKey = runLockKey(unlocked.pid);
+  const other = (await chrome.storage.session.get(lockKey))[lockKey];
+  if (runLockedByOther(other, PANEL_ID)) { setError('다른 창에서 이 계정으로 교정하고 있어요. 그 창의 교정이 끝난 뒤 눌러 주세요.'); return; }
+  if (overLimit(me(), await monthUsd())) { setError(`이번 달 한도($${me().monthlyLimit})를 다 썼어요. 설정에서 한도를 바꿀 수 있어요.`); return; }
+  runPid = unlocked.pid;
+  runKey = unlocked.key;
+  const beat = () => chrome.storage.session.set({ [lockKey]: { owner: PANEL_ID, at: Date.now() } });
+  await beat();
+  const beatTimer = setInterval(() => { beat(); touch(); }, 20000);
   running = true;
   stopReq = false;
   setError('');
@@ -1155,6 +1320,11 @@ async function startRun() {
     restoreBox();
     if (e.name !== 'AbortError') setError(e.message || String(e));
   } finally {
+    clearInterval(beatTimer);
+    chrome.storage.session.remove(lockKey);
+    if (unlocked) { unlocked.lastUsed = Date.now(); chrome.storage.session.set({ unlock: unlocked }); }
+    runPid = '';
+    runKey = '';
     running = false;
     autoRunning = false;
     stopReq = false;
@@ -1248,7 +1418,7 @@ function setSettingsOpen(on) {
   document.body.classList.toggle('settings-open', on);
   $('settings').setAttribute('aria-hidden', String(!on));
   $('settings').inert = !on;
-  $('work').inert = on;
+  $('work').inert = on || document.body.classList.contains('auth-open');
 }
 $('btnOpenSettings').addEventListener('click', () => setSettingsOpen(true));
 $('btnCloseSettings').addEventListener('click', () => setSettingsOpen(false));
@@ -1256,9 +1426,46 @@ $('btnAdvanced').addEventListener('click', () => {
   const on = $('advancedBox').classList.toggle('open');
   $('btnAdvanced').setAttribute('aria-expanded', String(on));
 });
-$('btnAddKey').addEventListener('click', () => openAddKey(!$('addKeyBox').classList.contains('open')));
-$('btnSaveKey').addEventListener('click', addKey);
-$('newKeyValue').addEventListener('keydown', (e) => { if (e.key === 'Enter') addKey(); });
+$('btnChangeKey').addEventListener('click', () => toggleBox('changeKeyBox', 'btnChangeKey'));
+$('btnSaveKey').addEventListener('click', changeKey);
+$('changeKeyPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') changeKey(); });
+$('btnChangePw').addEventListener('click', () => toggleBox('changePwBox', 'btnChangePw'));
+$('btnSavePw').addEventListener('click', changePassword);
+$('btnLogout').addEventListener('click', lock);
+$('btnDeleteProfile').addEventListener('click', deleteProfile);
+$('monthlyLimit').addEventListener('change', async () => {
+  me().monthlyLimit = Math.max(0, Number($('monthlyLimit').value) || 0);
+  await saveProfiles();
+  showTodayCost();
+  msg('settingsMsg', me().monthlyLimit ? `이번 달 한도를 $${me().monthlyLimit}로 정했어요.` : '한도를 없앴어요.');
+});
+$('lockAfter').addEventListener('change', async () => {
+  me().lockAfterMin = Number($('lockAfter').value);
+  await saveProfiles();
+  msg('settingsMsg', '자동 로그아웃 시간을 바꿨어요.');
+});
+// 로그인 · 회원가입
+$('gateLogin').addEventListener('submit', (e) => { e.preventDefault(); login(); });
+$('gateSignup').addEventListener('submit', (e) => { e.preventDefault(); signup(); });
+$('toSignup').addEventListener('click', () => gateStep('signup'));
+$('toLogin').addEventListener('click', () => gateStep('login'));
+$('btnForgot').addEventListener('click', () => toggleBox('forgotBox'));
+$('btnReset').addEventListener('click', resetProfile);
+$('legacyKey').addEventListener('change', () => $('newKeyFld').classList.toggle('hidden', !!$('legacyKey').value));
+// 쓰는 동안은 자동 로그아웃 시계를 늦춤
+for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, touch, { capture: true, passive: true });
+setInterval(() => {
+  if (unlocked && !running && lockExpired(unlocked, me())) lock();
+}, 30000);
+// 다른 창에서 로그아웃·로그인하면 이 창도 따라감 (교정 중인 창은 끝날 때까지 그대로)
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area === 'local' && ch.profiles) profiles = ch.profiles.newValue || [];
+  if (area !== 'session' || !ch.unlock) return;
+  const u = ch.unlock.newValue;
+  if (u?.pid === unlocked?.pid && u?.key === unlocked?.key) { unlocked = u; return; }
+  unlocked = u && profiles.some((p) => p.id === u.pid) ? u : null;
+  if (unlocked) { showGate(false); fillForms(); showTodayCost(); } else if (!running) { setSettingsOpen(false); showGate(true); }
+});
 $('model').addEventListener('change', async () => { settings.model = $('model').value; await persist(); msg('settingsMsg', '모델을 바꿨어요.'); });
 $('btnSaveAdvanced').addEventListener('click', saveAdvanced);
 
@@ -1284,7 +1491,7 @@ async function rebuildToc() {
   await putBook(info.bookIdx, book);
   $('tocText').value = '';
   showTocState(book);
-  if (!activeKey()) throw new Error('API 키가 없어요. 설정 탭에서 추가해 주세요.');
+  if (!activeKey()) throw new Error('로그인해 주세요.');
   abort = new AbortController();
   const tab = await getEditorTab();
   await ensureToc(tab, info, book, abort.signal);
@@ -1609,13 +1816,9 @@ playSplash($('brand')).catch(() => {});
 
 (async () => {
   await loadSettings();
+  await restoreUnlock();
+  setupBrand(document.querySelector('.auth-brand')).catch(() => {});
   fillForms();
-  showTodayCost();
   await cleanupBooks();
-  if (!activeKey()) {
-    setSettingsOpen(true);
-    openAddKey(true);
-    msg('settingsMsg', '처음이시면 API 키를 추가해 주세요.');
-  }
-  refreshStatus();
+  if (unlocked) { showTodayCost(); refreshStatus(); } else showGate(true);
 })();
