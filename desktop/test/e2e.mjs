@@ -100,10 +100,19 @@ await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.match(await panel.inputValue('#output'), /151쪽 제목/);
 assert.equal((await mock()).apiCalls[0].key, KEY);
+// 목차: 편집 화면 창에서 목차 쪽(2쪽)을 가져와 Claude로 정리하고 책 기록에 저장
+{
+  const m0 = await mock();
+  assert.equal(m0.tocCalls, 1, '목차 정리 호출 한 번');
+  assert.equal(m0.tocImages, 2, '목차 이미지 2쪽');
+  const toc = await panel.evaluate(async () => Object.entries(await chrome.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => v.toc || v.tocError));
+  assert.ok(toc.some((t) => /@@\[1부 시작/.test(t)), '목차 저장됨: ' + toc);
+  assert.equal(await panel.textContent('#tocStatus'), '');
+}
 await panel.click('#btnApply');
 await panel.waitForSelector('#btnApply.full', { timeout: 20000 });
 assert.match(await editor.evaluate(() => CKEDITOR.instances.content.getData()), /151쪽 제목/);
-console.log('✓ 편집하기(팝업) → 교정 → 편집기에 넣기');
+console.log('✓ 편집하기(팝업) → 목차 읽기 → 교정 → 편집기에 넣기');
 
 // 3. 자동 모드 151 → 153
 await panel.click('#btnOpenSettings');

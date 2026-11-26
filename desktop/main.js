@@ -281,6 +281,32 @@ ipcMain.handle('runtime:send', (e, msg) => new Promise((resolve) => {
   for (const wc of targets) wc.send('runtime:message', id, msg);
 }));
 ipcMain.on('runtime:response', (_e, id, r) => pending.get(id)?.(r));
+// Claude API: 패널 대신 앱 본체가 보낸다 (preload-shim.js 의 fetch 참고)
+const apiCalls = new Map();
+const netLog = [];
+function logNet(line) {
+  netLog.push(`${new Date().toLocaleTimeString('sv')} ${line}`);
+  if (netLog.length > 30) netLog.shift();
+}
+ipcMain.handle('api:fetch', async (e, id, url, { method, headers, body }) => {
+  if (!shimmed.has(e.sender) || !/^https:\/\/api\.anthropic\.com\//.test(url)) return { error: 'blocked' };
+  const ctl = new AbortController();
+  apiCalls.set(id, ctl);
+  try {
+    const res = await e.sender.session.fetch(url, { method, headers, body, signal: ctl.signal });
+    const text = await res.text();
+    if (!res.ok) logNet(`API ${res.status} ${text.slice(0, 160)}`);
+    return { status: res.status, statusText: res.statusText, headers: [...res.headers.entries()], body: text };
+  } catch (err) {
+    if (ctl.signal.aborted) return { aborted: true };
+    logNet(`API 연결 실패 ${err.message}`);
+    return { error: err.message || String(err) };
+  } finally {
+    apiCalls.delete(id);
+  }
+});
+ipcMain.on('api:abort', (_e, id) => apiCalls.get(id)?.abort());
+
 let splashShown = false;
 ipcMain.on('splash:first', (e) => {
   const first = !splashShown && e.sender === panelView?.webContents;
@@ -371,6 +397,7 @@ function diagnostics() {
       for (const f of wc.mainFrame.framesInSubtree) if (f !== wc.mainFrame) lines.push(`     프레임 ${f.name || ''} ${f.url}`);
     } catch {}
   }
+  lines.push('', '최근 연결 오류:', ...(netLog.length ? netLog : ['(없음)']));
   return lines.join('\n');
 }
 
@@ -401,11 +428,22 @@ ipcMain.on('layout:mode', (e, mode) => {
   layout();
 });
 
+// 연결 오류를 진단 정보에 남긴다 (광고·통계처럼 막혀도 되는 요청은 빼고)
+function watchNetErrors(ses, label) {
+  ses.webRequest.onErrorOccurred((d) => {
+    if (d.error === 'net::ERR_ABORTED' || d.resourceType === 'image' && !/mypickebook/.test(d.url)) return;
+    if (!/mypickebook|anthropic/.test(d.url)) return;
+    logNet(`${label} ${d.method} ${d.url.slice(0, 120)} → ${d.error}`);
+  });
+}
+
 // ---------- 프로필 바꾸기: 사이트 화면을 그 사람의 로그인으로 다시 만든다 ----------
 const sitePartitions = new Map(); // session -> partition 이름
 function makeSiteView(profileId) {
   const partition = partitionFor(profileId);
-  sitePartitions.set(session.fromPartition(partition), partition);
+  const ses = session.fromPartition(partition);
+  if (!sitePartitions.has(ses)) watchNetErrors(ses, '사이트');
+  sitePartitions.set(ses, partition);
   const v = new WebContentsView({ webPreferences: { partition, contextIsolation: true, sandbox: true } });
   v.setBackgroundColor('#ffffff');
   registerTab(v.webContents, partition);
@@ -445,6 +483,7 @@ app.whenReady().then(() => {
   currentProfile = activeProfileId(extStore.data);
   const appSes = session.fromPartition(APP_PARTITION);
   serveExtension(appSes);
+  watchNetErrors(appSes, '앱');
   if (process.env.SILO_MOCK) {
     // 테스트 전용: 가짜 사이트·가짜 API, 배치 확인용 정보
     require(path.resolve(process.env.SILO_MOCK))({ appSes });

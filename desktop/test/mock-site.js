@@ -46,7 +46,14 @@ async function site(req) {
     return res(JSON.stringify({ result: 200, img_path: `/upload/crop/${S.uploads.length}.png` }), 'application/json');
   }
   if (/^\/upload\/crop\/\d+\.png$/.test(url.pathname)) return res(originalImg, 'image/png');
-  if (url.pathname === '/module/book/table_of_content.php') return res('', 'text/html', 500);
+  if (url.pathname === '/module/book/table_of_content.php') {
+    S.tocFetches = (S.tocFetches || 0) + 1;
+    if (process.env.SILO_MOCK_NO_TOC) return res('', 'text/html', 500);
+    const n = Number(url.searchParams.get('page') || 1);
+    return res(`<!doctype html><meta charset="utf-8"><div class="feed_wrap"><h1>목차</h1><div><img src="/upload/toc/${n}.jpg"></div>
+      <div class="page"><a href="?book_idx=23584&page=1">1</a><a href="?book_idx=23584&page=2">2</a></div></div>`, 'text/html; charset=utf-8');
+  }
+  if (/^\/upload\/toc\/\d\.jpg$/.test(url.pathname)) return res(pageImg, 'image/jpeg');
   if (url.pathname === '/making/make_save_proc.php') {
     S.saves.push({ ...JSON.parse(await req.text()), at: Date.now() });
     return res('{"result":200}', 'application/json');
@@ -66,8 +73,8 @@ module.exports = ({ appSes }) => {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     const body = JSON.parse(await req.text());
     const reply = (obj, usage = { input_tokens: 3000, output_tokens: 1500 }) => res(JSON.stringify({
-      model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(obj) }], usage }), 'application/json', 200, cors);
-    if (/차례\(목차\) 페이지 이미지/.test(body.system[0].text)) return reply({ toc: '', notes: '' });
+      model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(obj) }], usage }), 'application/json', 200);
+    if (/차례\(목차\) 페이지 이미지/.test(body.system[0].text)) { S.tocCalls = (S.tocCalls || 0) + 1; S.tocImages = body.messages.at(-1).content.filter((c) => c.type === 'image').length; return reply({ toc: '@@[1부 시작 1\n@@{151쪽 제목 151', notes: '' }); }
     const userText = body.messages.at(-1).content.at(-1).text;
     const isVerify = /2차 검수/.test(userText);
     const page = isVerify ? lastPage : Number((userText.match(/작업 쪽: (\d+)/) || [])[1]);
