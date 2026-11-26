@@ -340,6 +340,7 @@ function endBoot() {
   if (!booting) return;
   booting = false;
   layout();
+  if (win && !win.isDestroyed()) win.setOpacity(1); // 이제 창을 보여 줌 (그 전에는 투명)
   // 패널의 시작 모션은 화면이 실제로 보인 뒤에 시작한다 (그때 창 크기를 읽음)
   for (const r of revealWaiters) r(true);
   revealWaiters = [];
@@ -534,9 +535,14 @@ app.whenReady().then(() => {
   win = new BaseWindow({
     width: b?.width || 1500, height: b?.height || 960, x: b?.x, y: b?.y,
     minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#000000', autoHideMenuBar: true,
-    icon: path.join(EXT_DIR, 'icon128.png'),
+    icon: path.join(EXT_DIR, 'icon128.png'), show: false,
   });
-  if (prefs.data.maximized) win.maximize();
+  // 윈도는 새 창을 처음 그릴 때 하얗게 칠하고, 원래 크기로 띄운 뒤 최대화하면 그 크기의 흰 사각형이 잠깐 보인다.
+  // 그래서 창을 완전히 투명하게 둔 채 처음부터 최대화(또는 그냥) 상태로 띄우고, 패널이 준비되면(endBoot) 보이게 한다.
+  // 창은 실제로 떠 있으므로 크기는 처음부터 맞다 (시작 모션은 endBoot 뒤에 크기를 읽음).
+  win.setOpacity(0);
+  if (prefs.data.maximized) win.maximize(); // 숨은 창은 최대화하면서 바로 뜬다
+  else win.show();
   shimPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-shim.js'), contextIsolation: false, sandbox: true };
   const uiPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-ui.js'), contextIsolation: true, sandbox: true };
 
