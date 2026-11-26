@@ -15,12 +15,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const app = await electron.launch({
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'silo-upd-'));
+const launch = () => electron.launch({
   executablePath: require(path.join(root, 'node_modules/electron')),
   args: [root, '--no-sandbox'],
-  env: { ...process.env, SILO_MOCK: path.join(here, 'mock-site.js'), SILO_FAKE_UPDATE: path.join(here, 'fake-updater.js'),
-    SILO_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'silo-upd-')) },
+  env: { ...process.env, SILO_MOCK: path.join(here, 'mock-site.js'), SILO_FAKE_UPDATE: path.join(here, 'fake-updater.js'), SILO_USER_DATA: userData },
 });
+let app = await launch();
 async function find(re, timeout = 15000) {
   for (let t = 0; t < timeout; t += 100) {
     const p = app.windows().find((w) => re.test(w.url()));
@@ -30,8 +31,8 @@ async function find(re, timeout = 15000) {
   throw new Error('창 없음: ' + re);
 }
 const fake = () => app.evaluate(() => ({ checks: globalThis.__fakeUpdater.checks, installs: globalThis.__fakeUpdater.installs }));
-const panel = await find(/sidepanel\.html/);
-const bar = await find(/bar\.html/);
+let panel = await find(/sidepanel\.html/);
+let bar = await find(/bar\.html/);
 
 // 시작 모션 → 가입
 await panel.waitForFunction(() => document.querySelector('canvas.splash'), null, { timeout: 15000 });
@@ -66,5 +67,25 @@ await sleep(300);
 assert.deepEqual((await fake()).installs, [{ silent: true, runAfter: true }]);
 console.log('✓ 누르면 조용히 설치하고 다시 켬');
 
+await app.close();
+
+// 업데이트 뒤 처음 켜면: 로그인하고 위쪽 막대가 보일 때 "새 버전 …로 업데이트했어요" 한 번
+const prefsFile = path.join(userData, 'desktop.json');
+const prefs = JSON.parse(fs.readFileSync(prefsFile, 'utf8'));
+const ver = prefs.lastVersion;
+assert.ok(ver, '지금 버전을 적어 둠');
+fs.writeFileSync(prefsFile, JSON.stringify({ ...prefs, lastVersion: '0.0.1' }));
+app = await launch();
+panel = await find(/sidepanel\.html/);
+bar = await find(/bar\.html/);
+await panel.waitForFunction(() => document.body.classList.contains('auth-open') && !document.body.classList.contains('splashing'), null, { timeout: 20000 });
+if (await panel.isVisible('#toLogin')) await panel.click('#toLogin');
+await panel.fill('#loginId', 'kim');
+await panel.fill('#loginPw', 'abcd');
+await panel.press('#loginPw', 'Enter');
+await bar.waitForSelector('#toast:not([hidden])', { timeout: 10000 });
+assert.equal(await bar.textContent('#toast'), `새 버전 ${ver}로 업데이트했어요.`);
+assert.equal(JSON.parse(fs.readFileSync(prefsFile, 'utf8')).lastVersion, ver);
+console.log('✓ 업데이트 뒤 처음 켜면 한 번 알려 줌');
 await app.close();
 console.log('모두 통과');
