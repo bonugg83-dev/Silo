@@ -6,11 +6,13 @@ import {
 import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
+  pageFetchMyFeedback,
 } from './lib/page.js';
 import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize, displayText } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
 import { fixPageKind, tableFlags, hasSubscriptNote } from './lib/special.js';
+import { parseBookList, parseFeedPopup, mergeFeedback, feedbackDigest } from './lib/feedback.js';
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
 import { tidyMessage, sortReview, reviewCounts } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
@@ -536,7 +538,6 @@ const STEPS = [
   ['send', 'AI에게 원본 보내는 중'],
   ['answer', '답변 받는 중'],
   ['letters', '글자 하나하나 읽는 중'],
-  ['egg', '구본욱 최고면 개추ㅋ'],
   ['header', '머리말·쪽 번호 지우는 중'],
   ['join', '끊긴 단어 붙이는 중'],
   ['para', '문단 나누는 중'],
@@ -551,13 +552,12 @@ const STEPS = [
 ];
 const STEP_AT = Object.fromEntries(STEPS.map(([k], i) => [k, i]));
 const TIMED_MS = 5000; // AI 기다리는 동안 한 단계
-const EGG_MS = 800; // 이스터에그는 짧게
 const MIN_MS = 250; // 따라잡을 때 한 단계 최소 표시
 
 function showStepLine(text) {
   const line = $('stepLine');
   const span = document.createElement('span');
-  span.textContent = text.endsWith('ㅋ') ? text : `${text}…`;
+  span.textContent = `${text}…`;
   line.replaceChildren(span);
   $('result').dataset.state = 'busy';
 }
@@ -582,8 +582,7 @@ const stepper = {
     if (!this.active) return;
     const now = Date.now();
     if (this.timed && this.shown >= STEP_AT.send && this.shown < STEP_AT.foot && this.target <= this.shown) {
-      const wait = STEPS[this.shown][0] === 'egg' ? EGG_MS : TIMED_MS;
-      if (now - this.at >= wait) this.target = this.shown + 1;
+      if (now - this.at >= TIMED_MS) this.target = this.shown + 1;
     }
     if (this.shown < this.target && (this.shown < 0 || now - this.at >= MIN_MS)) {
       this.pending = '';
@@ -645,6 +644,58 @@ async function getEditorTab() {
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
     : '마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 연습하려면 “연습 페이지 열기”를 누르세요.');
 }
+// ---------- 관리자 피드백 ----------
+// chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
+const FEEDBACK_EVERY_MS = 12 * 60 * 60 * 1000;
+const feedbackKey = () => `feedback:${pid()}`;
+async function loadFeedback() {
+  const { [feedbackKey()]: feedback } = await chrome.storage.local.get(feedbackKey());
+  return { list: [], counts: {}, at: 0, pushed: [], shared: [], sharedAt: 0, ...(feedback || {}) };
+}
+let feedbackBusy = null;
+/** 마이픽 마이페이지에서 피드백을 읽어 와 저장하고, 새 것은 모두의 목록에 올리고, 모두의 목록을 받아 둔다 */
+function syncFeedback({ manual = false } = {}) {
+  if (feedbackBusy) return feedbackBusy;
+  feedbackBusy = (async () => {
+    const fb = await loadFeedback();
+    if (!manual && Date.now() - fb.at < FEEDBACK_EVERY_MS) return { fb, added: 0, skipped: true };
+    const tabs = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs.find((x) => x.id === active?.id) || tabs[0];
+    if (!tab) throw new Error('마이픽 사이트 창이 열려 있어야 피드백을 가져올 수 있어요.');
+    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: pageFetchMyFeedback, args: [fb.counts] });
+    const got = r?.result;
+    if (!got) throw new Error('피드백 화면을 읽지 못했어요.');
+    const titles = Object.fromEntries(got.lists.flatMap(parseBookList).map((b) => [b.idx, b]));
+    const items = Object.entries(got.pops).flatMap(([idx, htmls]) => htmls.flatMap(parseFeedPopup)
+      .map((f) => ({ ...f, idx, title: titles[idx]?.title || '' })));
+    const { list, added } = mergeFeedback(fb.list, items);
+    const next = { ...fb, list, counts: { ...fb.counts, ...got.counts }, at: Date.now() };
+    // 모두의 목록: 새로 받은 피드백 올리기(내용·유형만), 모두의 것 받기
+    // "이미 올린 것"은 계정 서버에도 두어, 다른 컴퓨터에서 가져와도 두 번 올리지 않는다
+    const key = (f) => `${f.idx}:${f.page}:${f.text}`;
+    await quietly(async (s) => { next.pushed = [...new Set([...next.pushed, ...await cloud.getFeedbackPushed(s)])]; });
+    const toPush = list.filter((f) => !next.pushed.includes(key(f)));
+    if (toPush.length && await quietly(async (s) => {
+      await cloud.pushFeedback(s, toPush);
+      await cloud.saveFeedbackPushed(s, [...next.pushed, ...toPush.map(key)]);
+    })) next.pushed = [...next.pushed, ...toPush.map(key)];
+    await quietly(async (s) => { next.shared = await cloud.listFeedback(s); next.sharedAt = Date.now(); });
+    await chrome.storage.local.set({ [feedbackKey()]: next });
+    paintFeedback(next);
+    return { fb: next, added: added.length };
+  })().finally(() => { feedbackBusy = null; });
+  return feedbackBusy;
+}
+function paintFeedback(fb) {
+  const el = $('feedbackInfo');
+  if (!el || !fb) return;
+  const when = fb.at ? new Date(fb.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  el.textContent = fb.at
+    ? `내 피드백 ${fb.list.length}건${fb.shared.length ? ` · 모두의 피드백 ${fb.shared.length}가지` : ''} · ${when}에 가져옴`
+    : '아직 가져오지 않았어요.';
+}
+
 async function runInPage(tabId, func, args = []) {
   const tab = await chrome.tabs.get(tabId);
   if (isPracticeUrl(tab.url)) {
@@ -809,6 +860,7 @@ async function analyze() {
   const pendingFootnotes = [info.currPage - 2, info.currPage - 1]
     .flatMap((p) => (book.pages[p]?.footMissing || []).filter((l) => !linked.has(`${p}:${l}`)).map((l) => `${p}쪽 [${l}]`))
     .join(', ');
+  syncFeedback().catch(() => {}); // 12시간에 한 번, 기다리지 않음 (이번 쪽에는 저장된 피드백을 씀)
   const ctx = {
     bookInfo: info.bookInfo,
     tip: info.tipText + (info.tipImages?.length ? '\n(제작 Tip에 이미지가 있어요. 이미지 내용은 볼 수 없으니 관련 판단이 필요하면 flags에 적으세요.)' : ''),
@@ -824,6 +876,7 @@ async function analyze() {
     dashSpacing: settings.dashSpacing,
     pendingFootnotes,
     subscriptNoteUsed: subscriptNoteUsed(book, info),
+    adminFeedback: await (async () => { const fb = await loadFeedback(); return feedbackDigest(fb.list, fb.shared); })(),
     imageWidth: sent.width,
     imageHeight: sent.height,
     zoomed: false,
@@ -848,6 +901,9 @@ async function analyze() {
   const noteLines = [];
   const skipOmission = ['toc', 'index_ad'].includes(result.page_kind);
   let r2usage = null;
+  // 2차 검증이 다시 보고 판단한 것 (1차의 불확실 표시, OCR에만 있는 구절)
+  const checkedByVerify = new Set();
+  const omissionsSeen = new Set();
 
   stepper.skipStep('verify');
   const omitted0 = skipOmission ? [] : findOmissions(ocrText, checked.text);
@@ -869,6 +925,9 @@ async function analyze() {
       });
       cost += estimateCostUsd(settings.model, r2.usage);
       r2usage = r2.usage;
+      // 2차가 원본(확대본)으로 다시 본 곳은 1차 표시를 떼고, 2차가 여전히 모르겠다고 한 것만 남긴다
+      for (const f of unsure) checkedByVerify.add(f);
+      for (const o of omitted) omissionsSeen.add(o);
       const fx = applyFixes(checked.text, r2.result.fixes, (x) => applyRules(x, { ...ruleOpts, allowBlankLines: true }).text);
       for (const f of fx.failed) {
         extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
@@ -907,7 +966,8 @@ async function analyze() {
   // 누락 경보 (프로그램 검사)
   if (!skipOmission) {
     // 한 쪽의 누락 의심은 한 줄로 묶는다. 한 문장 이상(20자 이상) 빠졌을 때만 빨강, 짧으면 노랑
-    const om = findOmissions(ocrText, checked.text);
+    // 2차가 이미 보고 "본문이 아님"으로 둔 구절은 빼고, 2차 뒤에 새로 생긴 누락만 본다
+    const om = findOmissions(ocrText, checked.text).filter((o) => !omissionsSeen.has(o));
     if (om.length) {
       const cut = (o) => (o.length > 30 ? `${o.slice(0, 30)}…` : o);
       const big = om.some((o) => o.replace(/\s/g, '').length >= 20);
@@ -950,7 +1010,7 @@ async function analyze() {
   current = {
     tabId: tab.id, info, ocrText, result, cost, sentImage: sent,
     text: checked.text, ruleChanges: checked.changes, ruleWarnings: checked.warnings,
-    flags: [...(result.flags || []), ...extraFlags].map(sortFlag).filter(Boolean),
+    flags: [...(result.flags || []).filter((f) => !checkedByVerify.has(f)), ...extraFlags].map(sortFlag).filter(Boolean),
     notes: [result.notes, ...noteLines].filter(Boolean).join('\n'),
     visuals, book, footMissing, footOrphans,
   };
@@ -1615,7 +1675,7 @@ function setSettingsOpen(on) {
   $('settings').inert = !on;
   $('work').inert = on || document.body.classList.contains('auth-open');
 }
-$('btnOpenSettings').addEventListener('click', () => setSettingsOpen(true));
+$('btnOpenSettings').addEventListener('click', () => { setSettingsOpen(true); loadFeedback().then(paintFeedback); });
 $('btnCloseSettings').addEventListener('click', () => setSettingsOpen(false));
 $('btnAdvanced').addEventListener('click', () => {
   const on = $('advancedBox').classList.toggle('open');
@@ -2037,6 +2097,19 @@ async function openPractice() {
   }
 }
 $('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
+$('btnFeedback').addEventListener('click', async () => {
+  const b = $('btnFeedback');
+  b.disabled = true;
+  $('feedbackInfo').textContent = '마이픽에서 피드백을 읽는 중…';
+  try {
+    const r = await syncFeedback({ manual: true });
+    paintFeedback(r.fb);
+    msg('settingsMsg', r.added ? `새 피드백 ${r.added}건을 가져왔어요. 다음 쪽부터 반영해요.` : '새 피드백이 없어요.');
+  } catch (e) {
+    paintFeedback(await loadFeedback());
+    msg('settingsMsg', e.message);
+  } finally { b.disabled = false; }
+});
 
 chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
 chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });

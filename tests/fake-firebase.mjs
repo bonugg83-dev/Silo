@@ -43,6 +43,15 @@ export function fakeFirebase(code = 'TESTCODE', saved = null) {
       const p = decodeURIComponent(u.pathname).split('/documents')[1] || '';
       if (p === ':commit') {
         for (const w of body.writes) {
+          if (w.update) {
+            // 모두의 피드백: 로그인한 회원만, text·type·count 만
+            const path = w.update.name.split('/documents')[1];
+            if (!path.startsWith('/feedback/') || !docs.has(`/users/${uid}`)) return deny;
+            const f = { ...(docs.get(path) || {}), ...w.update.fields };
+            for (const t of w.updateTransforms || []) f[t.fieldPath] = { integerValue: String(val(f[t.fieldPath]) + val(t.increment)) };
+            docs.set(path, f);
+            continue;
+          }
           const path = w.transform.document.split('/documents')[1];
           if (!path.startsWith(`/users/${uid}/`)) return deny;
           const f = docs.get(path) || {};
@@ -56,6 +65,10 @@ export function fakeFirebase(code = 'TESTCODE', saved = null) {
         if (id !== uid || body.fields.signupCode?.stringValue !== code) return deny;
         docs.set(`/users/${id}`, body.fields);
         return { status: 200, body: { fields: body.fields } };
+      }
+      if (p === '/feedback' && method === 'GET') {
+        if (!docs.has(`/users/${uid}`)) return deny;
+        return { status: 200, body: { documents: [...docs].filter(([k]) => k.startsWith('/feedback/')).map(([k, fields]) => ({ name: k, fields })) } };
       }
       if (!p.startsWith(`/users/${uid}`)) return deny;
       if (method === 'GET') return docs.has(p) ? { status: 200, body: { fields: docs.get(p) } } : err(404, 'not found', 'NOT_FOUND');
