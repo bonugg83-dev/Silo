@@ -329,7 +329,8 @@ let dragging = false;
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
-  const full = reviewOpen || authOpen || splashOpen;
+  // 검수 창은 오른쪽 패널 안에서만 열림 (창 전체로 넓히지 않음)
+  const full = authOpen || splashOpen;
   const strip = !full && popups.length ? STRIP_H : 0; // 창 목록 줄
   const top = authOpen || splashOpen ? 0 : BAR_H + strip; // 시작 모션과 로그인 화면에서는 위쪽 막대도 숨김
   const ch = Math.max(0, h - top);
