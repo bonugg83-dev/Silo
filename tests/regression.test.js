@@ -192,3 +192,36 @@ test('검수 요약: 빨강·노랑·끝 쪽 수', () => {
   const pages = { 1: { issues: [{ cls: 'review' }] }, 2: { issues: [{ cls: 'warn' }] }, 3: { issues: [{ cls: 'review' }], reviewed: true }, 4: {}, links: [] };
   assert.deepEqual(reviewCounts(pages), { red: 1, yellow: 1, done: 2, total: 4 });
 });
+
+test('각주: 짝을 못 찾은 표시를 사실대로 (배정 범위 끝 / 범위 안인데 없음)', async () => {
+  const { markUnlinked } = await import('../extension/lib/footnotes.js');
+  const book = {
+    pages: {
+      10: { issues: [{ cls: 'review', text: '[주석] 각주2 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)' }] },
+      11: { issues: [{ cls: 'review', text: '[주석] 각주5 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)' }] },
+      12: { issues: [{ cls: 'review', text: '[주석] 각주7 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)' }] },
+    },
+    links: [{ label: '각주2', from: 10, to: 11, done: true }],
+  };
+  assert.equal(markUnlinked(book), 2);
+  assert.match(book.pages[10].issues[0].text, /이어 붙임/, '이은 것은 그대로');
+  assert.match(book.pages[11].issues[0].text, /각주5 설명을 다음 쪽에서 찾지 못함/);
+  assert.match(book.pages[12].issues[0].text, /배정 범위 밖\(다음 쪽\)/);
+  const b2 = { pages: { 30: { issues: [{ text: '[주석] 앞쪽 각주9의 설명 (자동 모드 끝에 앞쪽으로 옮김)' }] } } };
+  markUnlinked(b2);
+  assert.match(b2.pages[30].issues[0].text, /각주9 번호가 배정 범위 밖\(앞쪽\)/);
+});
+
+test('화면 표시: 문자 코드를 읽을 수 있는 글자로 (한 번·두 번 인코딩 모두)', async () => {
+  const { displayText } = await import('../extension/lib/convert.js');
+  assert.equal(displayText('그는 &#39;예&#39;라고 했다'), "그는 '예'라고 했다");
+  assert.equal(displayText('&amp;#39;A&amp;quot;'), '\'A"');
+  assert.equal(displayText('R&D와 &lt;표&gt;'), 'R&D와 <표>');
+  assert.equal(displayText('그냥 글'), '그냥 글');
+});
+
+test('사이트 글의 이름 문자 코드(&rdquo; 등)도 실제 글자로 읽음', async () => {
+  const { editorHtmlToText, displayText } = await import('../extension/lib/convert.js');
+  assert.equal(editorHtmlToText('<p>&ldquo;예&rdquo;&middot;&lsquo;아니&rsquo;&hellip;</p>'), '“예”·‘아니’…');
+  assert.equal(displayText('&amp;rdquo;끝'), '”끝');
+});

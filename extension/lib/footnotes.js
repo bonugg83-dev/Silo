@@ -43,3 +43,37 @@ export function removeNoteLine(text, label) {
   lines.splice(idx, 1);
   return { ok: true, text: lines.join('\n') };
 }
+
+/**
+ * 자동 모드가 끝난 뒤 짝을 못 찾은 각주 표시 문장을 사실대로 바꾼다.
+ * 다음(앞) 쪽을 처리하지 않았으면 "배정 범위 밖", 처리했는데 짝이 없으면 "짝을 찾지 못함".
+ * @returns {number} 바꾼 표시 수
+ */
+export function markUnlinked(book) {
+  const links = book.links || [];
+  const has = (p) => !!book.pages?.[p];
+  let n = 0;
+  for (const [key, rec] of Object.entries(book.pages || {})) {
+    const p = Number(key);
+    if (!Number.isFinite(p) || !rec?.issues) continue;
+    for (const it of rec.issues) {
+      const text = String(it.text || '');
+      let m = text.match(/(\S+) 설명이 다음 쪽에 있음 \(자동 모드 끝에 이어 붙임\)/);
+      if (m && !links.some((l) => l.from === p && norm(l.label) === norm(m[1]))) {
+        it.text = text.replace(m[0], has(p + 1) || has(p + 2)
+          ? `${m[1]} 설명을 다음 쪽에서 찾지 못함`
+          : `${m[1]} 설명이 배정 범위 밖(다음 쪽)에 있어 잇지 못함`);
+        n++;
+        continue;
+      }
+      m = text.match(/앞쪽 (\S+)의 설명 \(자동 모드 끝에 앞쪽으로 옮김\)/);
+      if (m && !links.some((l) => l.to === p && norm(l.label) === norm(m[1]))) {
+        it.text = text.replace(m[0], has(p - 1) || has(p - 2)
+          ? `앞쪽에서 ${m[1]} 번호를 찾지 못함 (설명은 이 쪽 맨 위에 둠)`
+          : `${m[1]} 번호가 배정 범위 밖(앞쪽)에 있어 옮기지 못함 (설명은 이 쪽 맨 위에 둠)`);
+        n++;
+      }
+    }
+  }
+  return n;
+}

@@ -7,8 +7,8 @@ import { callClaude, estimateCostUsd, MODELS } from './lib/claude.js';
 import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
 } from './lib/page.js';
-import { findLinks, putNoteAtMarker, removeNoteLine } from './lib/footnotes.js';
-import { editorHtmlToText, downscaleImage, imageSize } from './lib/convert.js';
+import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked } from './lib/footnotes.js';
+import { editorHtmlToText, downscaleImage, imageSize, displayText } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
 import { tidyMessage, sortReview, reviewCounts } from './lib/issues.js';
@@ -717,9 +717,13 @@ async function analyze() {
 
   // 누락 경보 (프로그램 검사)
   if (!skipOmission) {
-    for (const o of findOmissions(ocrText, checked.text)) {
-      extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
-        message: `빠졌을 수 있음: “${o.length > 40 ? `${o.slice(0, 40)}…` : o}”` });
+    // 한 쪽의 누락 의심은 한 줄로 묶는다. 한 문장 이상(20자 이상) 빠졌을 때만 빨강, 짧으면 노랑
+    const om = findOmissions(ocrText, checked.text);
+    if (om.length) {
+      const cut = (o) => (o.length > 30 ? `${o.slice(0, 30)}…` : o);
+      const big = om.some((o) => o.replace(/\s/g, '').length >= 20);
+      extraFlags.push({ kind: 'omission', needs_review: big, quote: '',
+        message: `${om.length > 1 ? `${om.length}곳 ` : ''}OCR에 있는데 결과에 없음: ${om.slice(0, 2).map((o) => `“${cut(o)}”`).join(', ')}${om.length > 2 ? ' 등' : ''}` });
     }
     if (tooShort(ocrText, checked.text)) extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: 'OCR보다 글이 많이 짧음' });
   }
@@ -849,7 +853,7 @@ function decidePageNumber(info, result, book) {
 }
 
 // ---------- 화면 그리기 ----------
-const KIND_LABEL = { visual: '[시각자료]', footnote: '[주석]', heading: '[제목 단계]', uncertain_text: '[불확실한 글자]', layout: '[배치]', other: '[기타]' };
+const KIND_LABEL = { omission: '[누락 의심]', visual: '[시각자료]', footnote: '[주석]', heading: '[제목 단계]', uncertain_text: '[불확실한 글자]', layout: '[배치]', other: '[기타]' };
 const PAGE_KIND = { chapter_cover: '장 표지', visual_only: '사진·그림만 있는 쪽', blank: '빈 면', toc: '차례', endnotes: '미주 설명', index_ad: '색인·광고' };
 
 function allIssues() {
@@ -936,11 +940,11 @@ function renderOutputView() {
   const emit = (from, to, parent) => {
     let pos = from;
     for (const [at, i] of [...imgAt].filter(([at]) => at >= from && at < to).sort((a, b) => a[0] - b[0])) {
-      parent.append(document.createTextNode(text.slice(pos, at)));
+      parent.append(document.createTextNode(displayText(text.slice(pos, at))));
       parent.append(visualThumb(i));
       pos = at;
     }
-    parent.append(document.createTextNode(text.slice(pos, to)));
+    parent.append(document.createTextNode(displayText(text.slice(pos, to))));
   };
   let pos = 0;
   for (const r of ranges) {
@@ -1006,7 +1010,7 @@ function renderDiff(a, b) {
   box.innerHTML = '';
   for (const part of diffWords(a, b)) {
     const el = part.type === 'same' ? document.createElement('span') : document.createElement(part.type === 'add' ? 'ins' : 'del');
-    el.textContent = part.text + (part.text.endsWith('\n') ? '' : ' ');
+    el.textContent = displayText(part.text) + (part.text.endsWith('\n') ? '' : ' ');
     box.appendChild(el);
   }
 }
@@ -1690,6 +1694,11 @@ async function rewritePage(tab, n, change) {
 /** 자동 모드 끝: 쪽을 넘는 각주를 모두 이어 붙인다 */
 async function linkFootnotes(bookIdx) {
   const pending = ((await getBook(bookIdx)).links || []).filter((l) => !l.done);
+  // 짝이 없는 각주(배정 범위 끝 등)는 "이어 붙임" 대신 사실대로 표시
+  {
+    const b = await getBook(bookIdx);
+    if (markUnlinked(b)) await putBook(bookIdx, b);
+  }
   if (!pending.length) return '';
   let ok = 0;
   for (const [i, link] of pending.entries()) {

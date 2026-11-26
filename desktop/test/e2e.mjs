@@ -133,13 +133,13 @@ assert.equal(m.uploads.length, 1);
 assert.ok(!m.saves.some((s) => s.gubun === 'complete'), '최종 제출 없음');
 console.log('✓ 자동 모드 153쪽까지, 저장', m.saves.length, '번, 그림 올리기', m.uploads.length, '번');
 
-// 4. 검수: 패널이 창 전체로
+// 4. 검수: 오른쪽 패널 안에서 열림 (사이트는 그대로 보임)
 await panel.click('#btnReview');
 await panel.waitForFunction(() => document.body.classList.contains('review-open'));
 await sleep(300);
 b = await silo((s) => s.bounds());
-assert.equal(b.panel.width, b.win[0], '검수 중 패널이 창 전체');
-assert.equal(b.site.width, 0);
+assert.equal(b.panel.width, 420, '검수 중에도 패널 폭 그대로');
+assert.ok(b.site.width > 0, '검수 중에도 사이트가 보임');
 if (process.env.SILO_SHOT) {
   await panel.screenshot({ path: path.join(process.env.SILO_SHOT, 'review.png') });
 }

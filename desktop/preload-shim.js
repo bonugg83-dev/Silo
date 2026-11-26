@@ -99,7 +99,7 @@ window.fetch = async (input, init = {}) => {
 
 ipcRenderer.send('shim:hello');
 
-// 패널이 검수 창(review-open), 로그인 화면(auth-open), 시작 모션(splashing)을 열면 앱이 패널을 창 전체로 넓힌다.
+// 패널이 로그인 화면(auth-open), 시작 모션(splashing)을 열면 앱이 패널을 창 전체로 넓힌다. 검수 창(review-open)은 패널 안에서 열림.
 // 시작 모션은 패널이 처음 그려질 때 바로 시작하므로, 오늘 아직 안 봤으면 미리 창 전체로 넓혀 둔다
 // (확장 lib/splash.js 와 같은 기준: localStorage "silo-splash-day", 움직임 줄이기 설정).
 if (location.pathname === '/sidepanel.html') {
@@ -117,7 +117,7 @@ if (location.pathname === '/sidepanel.html') {
     last = k;
     ipcRenderer.send('layout:mode', mode);
     // 오른쪽 패널로 붙어 있을 때는 로고가 위쪽 막대에 있으므로 패널 머리의 로고는 숨김 (창 전체일 때는 보임)
-    side = !mode.review && !mode.auth && !mode.splash;
+    side = !mode.auth && !mode.splash;
     document.documentElement?.classList.toggle('silo-side', side);
   };
   let side = false;
