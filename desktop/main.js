@@ -234,7 +234,7 @@ ipcMain.handle('tabs:get', (_e, id) => {
 });
 ipcMain.handle('tabs:getCurrent', (e) => (tabs.has(e.sender.id) ? tabInfo(e.sender) : undefined));
 function openPracticeWindow(url) {
-  const w = new BrowserWindow({ width: 1360, height: 920, autoHideMenuBar: true, title: 'Silo 연습', backgroundColor: '#0b0b0b',
+  const w = new BrowserWindow({ width: 1360, height: 920, autoHideMenuBar: true, title: 'Silo 테스트', backgroundColor: '#0b0b0b',
     icon: path.join(EXT_DIR, 'icon128.png'), webPreferences: shimPrefs });
   registerTab(w.webContents, null);
   w.loadURL(url);

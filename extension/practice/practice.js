@@ -96,7 +96,7 @@ function makeTocImage() {
 
 // ---------- 저장 흉내 ----------
 window.saveGo = function saveGo(gubun) {
-  if (gubun !== 'temp' && gubun !== 'next') { alert('연습 페이지에는 제출하기가 없어요.'); return false; }
+  if (gubun !== 'temp' && gubun !== 'next') { alert('테스트 화면에는 제출하기가 없어요.'); return false; }
   window.CKEDITOR.instances.content.updateElement();
   const v = $('content').value;
   if (v.indexOf('&gt;') > -1 || v.indexOf('&lt;') > -1) { alert('산괄호(</>), 부등호 기호는 유니코드를 사용해 주세요.'); return false; }
@@ -169,6 +169,59 @@ $('btnAddCustom').addEventListener('click', async () => {
   $('customPageNum').value = '';
   await init(false);
 });
+// ---------- 테스트 묶음 가져오기 ----------
+// 파일 모양: { type: 'silo-test-pack', version: 1, name, pages: [{ label, pageNum, image: 'data:image/…', ocr: ['줄', …], book?: { title, author, publisher } }] }
+const escHtml = (l) => String(l).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function packToPages(pack) {
+  if (!pack || pack.type !== 'silo-test-pack' || !Array.isArray(pack.pages)) throw new Error('Silo 테스트 묶음 파일이 아니에요.');
+  const name = String(pack.name || '테스트 묶음');
+  return pack.pages.map((p, i) => {
+    if (!/^data:image\/(jpeg|png|webp);base64,/.test(p?.image || '')) throw new Error(`${i + 1}번째 쪽 이미지가 없어요.`);
+    const ocr = Array.isArray(p.ocr) ? p.ocr : String(p.ocr || '').replace(/\r\n?/g, '\n').split('\n');
+    return {
+      src: p.image, ocr: ocr.map(escHtml).join('<br>'), pageNum: String(p.pageNum ?? ''),
+      label: `${name}: ${p.label || `${i + 1}번째 쪽`}`, pack: name, book: p.book || pack.book || null,
+    };
+  });
+}
+$('btnImportPack').addEventListener('click', async () => {
+  const f = $('packFile').files?.[0];
+  if (!f) { $('packMsg').textContent = '묶음 파일을 먼저 골라 주세요.'; return; }
+  $('packMsg').textContent = '가져오는 중…';
+  try {
+    const add = packToPages(JSON.parse(await f.text()));
+    const old = await store.get(K_CUSTOM, []);
+    // 같은 묶음을 다시 가져오면 바꿔 넣음 (그 쪽들의 저장 내용은 지움)
+    const keep = old.filter((c) => c.pack !== add[0]?.pack);
+    if (keep.length !== old.length) await store.set(K_SAVED, {});
+    await store.set(K_CUSTOM, [...keep, ...add]);
+    // 가져온 첫 쪽으로 넘어가면(페이지를 다시 읽음) 안내를 다시 보여 줌
+    try { sessionStorage.setItem('packMsg', `${add.length}쪽을 가져왔어요.`); } catch {}
+    const samples = await loadSamples();
+    goTo(samples.length + keep.length + 1);
+  } catch (e) {
+    $('packMsg').textContent = `가져오지 못했어요: ${e.message}`;
+  }
+});
+
+// 쪽마다 책 정보가 다르면 (가져온 묶음) 오른쪽 책 정보 칸도 바꿔 보여 줌
+const defaultInfoHtml = document.querySelector('.makeInfor').innerHTML;
+function showBookInfo(book) {
+  const box = document.querySelector('.makeInfor');
+  if (!book?.title) { box.innerHTML = defaultInfoHtml; return; }
+  box.innerHTML = '';
+  const h = document.createElement('h2');
+  h.textContent = `${book.title} (테스트)`;
+  const ul = document.createElement('ul');
+  for (const [k, v] of [['지은이', book.author], ['출판사', book.publisher]]) {
+    if (!v) continue;
+    const li = document.createElement('li');
+    li.textContent = `${k} : ${v}`;
+    ul.append(li);
+  }
+  box.append(h, ul);
+}
+
 function renderCustomList(samplesCount, custom) {
   const ul = $('customList');
   ul.innerHTML = '';
@@ -193,7 +246,7 @@ function renderCustomList(samplesCount, custom) {
   });
 }
 $('btnReset').addEventListener('click', async () => {
-  if (!confirm('연습으로 저장한 내용과 남은 시간, Silo가 기억한 연습 책 기록을 지울까요? (넣은 내 쪽 이미지는 남아요)')) return;
+  if (!confirm('테스트로 저장한 내용과 남은 시간, Silo가 기억한 테스트 책 기록을 지울까요? (넣은 쪽 이미지는 남아요)')) return;
   // 도우미의 책 기록은 계정마다 book:<계정 id>:<책 번호>
   const books = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('book:') && k.endsWith(`:${BOOK_IDX}`));
   await chrome.storage.local.remove([K_SAVED, K_DEADLINE, `book:${BOOK_IDX}`, ...books]);
@@ -217,13 +270,14 @@ async function init(first = true) {
   $('curr_page').value = String(pageNo);
   $('curr_page').setAttribute('curr-page', String(pageNo));
   $('pageLabel').textContent = page.label || '';
+  showBookInfo(page.book);
   $('book_img').src = page.src;
   const saved = (await store.get(K_SAVED, {}))[pageNo];
   $('page_num').value = saved ? saved.pageNum : (page.pageNum || '');
   $('none_page').checked = !!(saved && saved.none);
   window.CKEDITOR.instances.content._data = saved ? saved.content : (page.ocr || '');
   showPreview();
-  document.title = `연습 ${pageNo}쪽 - Silo`;
+  document.title = `테스트 ${pageNo}쪽 - Silo`;
 }
 
 // ---------- 도우미 패널과 연결 ----------
@@ -238,6 +292,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+try { const m = sessionStorage.getItem('packMsg'); if (m) { $('packMsg').textContent = m; sessionStorage.removeItem('packMsg'); } } catch {}
 tocImage = makeTocImage();
 await init(true);
 await startTimer();

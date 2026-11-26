@@ -37,7 +37,7 @@ await panel.evaluate((k) => chrome.storage.local.set({
 await panel.reload();
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 assert.ok(await panel.isVisible('#gateLogin'), '처음엔 로그인 화면 (다른 컴퓨터에서 만든 계정일 수 있음)');
-await panel.click('#toSignup');
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 assert.ok(await panel.isVisible('#legacyFld'), '예전 키를 고를 수 있음');
 assert.ok(!(await panel.isVisible('#newKeyFld')), '예전 키를 고르면 새 키 칸은 숨김');
 assert.equal(await panel.locator('#legacyKey option').count(), 3);
