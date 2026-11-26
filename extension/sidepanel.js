@@ -10,6 +10,7 @@ import {
 import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize, displayText } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
+import { fixPageKind, tableFlags, hasSubscriptNote } from './lib/special.js';
 import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from './lib/omission.js';
 import { tidyMessage, sortReview, reviewCounts } from './lib/issues.js';
 import { applyFixes } from './lib/fixes.js';
@@ -702,6 +703,11 @@ function noteLabelsSoFar(book, currPage) {
   for (const [, t] of earlierPages(book, currPage)) for (const m of t.matchAll(/\[(각주|미주|주석|후주|주)(\d+|\*+)/g)) names.add(m[1]);
   return [...names].join(', ');
 }
+/** 배정 범위 안 앞쪽에서 첨자 제작자 주를 이미 썼는지 (배정 15쪽에 한 번만) */
+function subscriptNoteUsed(book, info) {
+  const from = isNaN(info.minPage) ? -Infinity : info.minPage;
+  return earlierPages(book, info.currPage).some(([p, t]) => p >= from && hasSubscriptNote(t));
+}
 function visualTitlesSoFar(book, currPage) {
   const out = [];
   for (const [p, t] of earlierPages(book, currPage)) {
@@ -817,6 +823,7 @@ async function analyze() {
     ocrText,
     dashSpacing: settings.dashSpacing,
     pendingFootnotes,
+    subscriptNoteUsed: subscriptNoteUsed(book, info),
     imageWidth: sent.width,
     imageHeight: sent.height,
     zoomed: false,
@@ -878,13 +885,24 @@ async function analyze() {
   }
 
   // 제목 단계는 목차에 있는 제목이면 목차대로
-  if (book.toc && result.page_kind !== 'toc') {
+  if (book.toc && !['toc', 'book_cover'].includes(result.page_kind)) {
     const al = alignHeadings(checked.text, book.toc);
     if (al.changes.length) {
       checked = { ...checked, text: al.text };
       noteLines.push(`목차에 맞춰 제목 단계 ${al.changes.length}곳 고침: ${al.changes.map((c) => `${c.from || '(없음)'}→${c.to} ${c.line}`).join(', ')}`);
     }
   }
+
+  // 책 표지·차례 쪽 손질 (표지 제목엔 단계 표시 없음, 차례 제목엔 @@[, 쪽 번호 앞 0 삭제)
+  {
+    const pk = fixPageKind(checked.text, result.page_kind);
+    if (pk.changes.length) {
+      checked = { ...checked, text: pk.text };
+      noteLines.push(pk.changes.slice(0, 3).join(', ') + (pk.changes.length > 3 ? ` 외 ${pk.changes.length - 3}곳` : ''));
+    }
+  }
+  // 표는 봉사자가 직접 그린다: 표마다 빨간 표시
+  extraFlags.push(...tableFlags(checked.text));
 
   // 누락 경보 (프로그램 검사)
   if (!skipOmission) {
@@ -1025,7 +1043,7 @@ function decidePageNumber(info, result, book) {
 
 // ---------- 화면 그리기 ----------
 const KIND_LABEL = { omission: '[누락 의심]', visual: '[시각자료]', footnote: '[주석]', heading: '[제목 단계]', uncertain_text: '[불확실한 글자]', layout: '[배치]', other: '[기타]' };
-const PAGE_KIND = { chapter_cover: '장 표지', visual_only: '사진·그림만 있는 쪽', blank: '빈 면', toc: '차례', endnotes: '미주 설명', index_ad: '색인·광고' };
+const PAGE_KIND = { book_cover: '책 표지', chapter_cover: '장 표지', visual_only: '사진·그림만 있는 쪽', blank: '빈 면', toc: '차례', endnotes: '미주 설명', index_ad: '색인·광고' };
 
 function allIssues() {
   const items = [];

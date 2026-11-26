@@ -188,6 +188,19 @@ export function applyRules(input, opts = {}) {
   // 13-1. 주석 표시: "[각주 3 ]" → "[각주3]", "[각주3 : 설명" → "[각주3: 설명"
   step('주석 표시 붙여 쓰기', /\[[ ]*(각주|미주|주석|후주|주)[ ]+(\d+|\*+)[ ]*(?=[\]:])/g, (m, k, n) => `[${k}${n}`);
   step('주석 표시 쌍점 정리', /\[(각주|미주|주석|후주|주)(\d+|\*+)[ ]*:[ ]*/g, (m, k, n) => `[${k}${n}: `);
+  // 13-2. 기호 각주(†, ‡, ※ 등)는 종류와 상관없이 * (안내서 50쪽). 나온 순서대로 *, **, ***
+  {
+    const SYM = '†‡§¶※#⁎∗✱✲＊⸸⸹';
+    const symRe = new RegExp(`\\[[ ]*각주[ ]*([${SYM}]+|\\*+)[ ]*(?=[\\]:])`, 'g');
+    const used = new Set([...text.matchAll(symRe)].map((m) => m[1]).filter((s) => /^\*+$/.test(s)).map((s) => s.length));
+    const map = new Map();
+    const starsFor = (s) => {
+      if (/^\*+$/.test(s)) return s;
+      if (!map.has(s)) { let n = 1; while (used.has(n)) n++; used.add(n); map.set(s, '*'.repeat(n)); }
+      return map.get(s);
+    };
+    step('기호 각주를 *로', symRe, (m, s) => `[각주${starsFor(s)}`);
+  }
 
   // 14. 장면 전환 기호 → ***
   step('장면 전환 기호를 ***로',
