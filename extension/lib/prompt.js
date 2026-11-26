@@ -237,9 +237,11 @@ export const VERIFY_SCHEMA = {
  * 2차 검수: 1차와 같은 대화에 이어서 보낸다 (원본 이미지·지침은 캐시로 다시 읽음).
  * full이면 원본 전체를 다시 훑어 누락·형식까지, 아니면 OCR과 다른 곳만.
  */
-export function buildVerifyMessage(ctx, draftText, diffs, omissions = [], { full = true } = {}) {
+export function buildVerifyMessage(ctx, draftText, diffs, omissions = [], { full = true, zoomed = false, unsure = [] } = {}) {
   let t = '';
+  if (zoomed) t += '이번에는 같은 쪽의 위쪽 절반과 아래쪽 절반을 확대한 이미지 두 장을 함께 보냅니다. 작은 글씨, 각주 번호와 설명, 낫표 획, 불확실한 글자를 확대본으로 다시 확인하세요.\n';
   t += section('draft_text', draftText);
+  if (unsure.length) t += section('uncertain_spots', unsure.map((u, i) => `${i + 1}. ${u}`).join('\n'));
   const list = diffs.map((d, i) => `${i + 1}. OCR: “${d.ocr || '(없음)'}” / 초안: “${d.result || '(없음)'}”`).join('\n');
   t += section('ocr_vs_draft_differences', list);
   t += section('only_in_ocr', omissions.map((o, i) => `${i + 1}. “${o}”`).join('\n'));
@@ -251,7 +253,7 @@ export function buildVerifyMessage(ctx, draftText, diffs, omissions = [], { full
       + '3. ocr_vs_draft_differences: 각 곳을 원본에서 다시 보고 초안이 맞는지(OCR이 맞을 때도, 둘 다 틀릴 때도 있음).\n'
       + '4. 형식: 제목 단계 표시가 table_of_contents와 맞는지, [종류]…[종류 끝]·@@i·[각주n: …] 형식, 빈 줄 규칙.\n';
   } else {
-    t += '목록의 곳(OCR과 다른 곳, OCR에만 있는 구절)만 원본에서 다시 보고 초안이 맞는지 확인하세요.\n';
+    t += '목록의 곳(OCR과 다른 곳, OCR에만 있는 구절, uncertain_spots)만 원본에서 다시 보고 초안이 맞는지 확인하세요.' + (zoomed ? ' 각주·작은 글씨도 확대본으로 확인하세요.' : '') + '\n';
   }
   t += 'find는 draft_text에서 정확히 한 번만 나오는 구절(앞뒤 글자를 조금 포함해 유일하게), replace는 바꿀 내용입니다. 빠진 글을 넣을 때는 앞 구절을 find로 잡고 replace에 그 구절과 빠진 글을 함께 씁니다. '
     + '초안 전체를 다시 쓰지 마세요. 맞는 곳은 답하지 않습니다. 고칠 곳이 없으면 fixes는 빈 배열입니다. 원본으로도 판단할 수 없는 곳만 flags에 짧게 남기세요.';

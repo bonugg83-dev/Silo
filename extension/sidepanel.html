@@ -38,9 +38,9 @@
       </div>
       <div id="liveWarn" class="note warn"></div>
 
-      <!-- 2층: 복붙하기 · 수정하기 -->
+      <!-- 2층: 붙여넣기 · 수정하기 -->
       <div class="r">
-        <button type="button" id="btnApply" class="pill copy">복붙하기<span class="over" aria-hidden="true">복붙성공</span></button>
+        <button type="button" id="btnApply" class="pill copy">붙여넣기<span class="over" aria-hidden="true">성공</span></button>
         <button type="button" id="btnToggleEdit" class="pill">수정하기</button>
         <button type="button" id="btnReviewed" class="pill hidden">확인함</button>
       </div>
@@ -105,7 +105,7 @@
       <div class="cost-cell"><span class="note">이번 달</span><b id="costMonth">$0.00</b><span id="costMonthWon" class="note"></span></div>
     </div>
     <div id="limitBar" class="limit hidden"><span id="limitFill"></span></div>
-    <label class="opt">이번 달 한도 ($, 0은 없음)<input type="number" id="monthlyLimit" class="num" min="0" step="5"></label>
+    <label class="opt">이번 달 한도 ($)<input type="number" id="monthlyLimit" class="num wide" min="0" step="5" placeholder="한도 없음"></label>
     <div id="todayCost" class="note"></div>
 
     <span class="lbl">로그인</span>
@@ -129,19 +129,15 @@
     <div id="advancedBox" class="adv"><div class="adv-in">
       <label class="opt">2차 검증<input type="checkbox" id="verify" class="tg"></label>
       <label class="opt">2차 검증 때 원본 전체 다시 보기<input type="checkbox" id="verifyFull" class="tg"></label>
-      <label class="opt">확대 이미지 함께 보내기<input type="checkbox" id="zoom" class="tg"></label>
+      <label class="opt">필요한 쪽만 확대 이미지로 다시 보기<input type="checkbox" id="zoom" class="tg"></label>
       <label class="opt">시각자료 자동으로 잘라 넣기<input type="checkbox" id="autoVisuals" class="tg"></label>
-      <label class="opt">줄표(―) 앞뒤
-        <select id="dashSpacing" class="sm">
-          <option value="attach">붙여 쓰기</option>
-          <option value="keep">원본대로</option>
-        </select>
-      </label>
       <label class="opt">쪽 넘김 간격<input type="checkbox" id="pacing" class="tg"></label>
-      <div class="opt sub">
-        <span class="note">쪽마다 기다리는 시간</span>
-        <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
-      </div>
+      <div id="paceBox" class="adv"><div class="adv-in">
+        <div class="opt sub">
+          <span class="note">쪽마다 기다리는 시간</span>
+          <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
+        </div>
+      </div></div>
       <div class="r"><button type="button" id="btnSaveAdvanced" class="pill">저장</button><span id="advancedMsg" class="note"></span></div>
       <div class="r"><button type="button" id="btnDeleteProfile" class="pill sm danger">이 계정 지우기</button></div>
     </div></div>
