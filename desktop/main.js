@@ -12,6 +12,7 @@ const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, sess
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const { setupUpdater } = require('./updater');
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'silo',
@@ -405,6 +406,7 @@ function sendBar() {
     editors: editorTabs().map((t) => (t.url.match(/[?&]book_page=(\d+)/) || [])[1] || ''),
     popups: popups.filter((p) => !p.wc.isDestroyed()).map((p) => ({ id: p.wc.id, title: popupTitle(p.wc), shown: p.wc.id === shownPopup })),
     siteTitle: siteView.webContents.getTitle(),
+    update: updater?.state || null, version: app.getVersion(),
   });
 }
 function popupTitle(wc) {
@@ -446,6 +448,7 @@ ipcMain.on('bar:cmd', (_e, cmd, arg) => {
   if (cmd === 'showSite') showPopup(null);
   if (cmd === 'showPopup') showPopup(arg);
   if (cmd === 'closePopup') closePopup(arg);
+  if (cmd === 'installUpdate') installUpdate();
   if (cmd === 'diagnostics') { clipboard.writeText(diagnostics()); barView.webContents.send('bar:toast', '연결 정보를 복사했어요. 채팅에 붙여 넣어 주세요.'); }
 });
 ipcMain.on('divider:drag', (_e, phase, x) => {
@@ -511,6 +514,24 @@ function serveExtension(ses) {
   });
 }
 
+// ---------- 자동 업데이트 ----------
+let updater = null;
+/** 설치 파일로 설치한 앱인지 (zip을 풀어 쓰는 앱은 스스로 업데이트할 수 없음) */
+function isInstalled() {
+  return fs.existsSync(path.join(path.dirname(process.execPath), 'Uninstall Silo.exe'));
+}
+/** 교정이 도는 중인지: 패널이 교정하는 동안 20초마다 남기는 표시(runlock:)가 최근 것이면 */
+function correcting() {
+  return Object.entries(sessionStore).some(([k, v]) => k.startsWith('runlock:') && v && Date.now() - (v.at || 0) < 60000);
+}
+function installUpdate() {
+  if (!updater) return;
+  const r = updater.install();
+  if (r.ok) return;
+  const why = r.reason === 'busy' ? '교정이 끝난 뒤에 눌러 주세요. 앱을 닫을 때도 자동으로 설치돼요.' : '아직 새 버전을 받는 중이에요.';
+  barView.webContents.send('bar:toast', why);
+}
+
 app.whenReady().then(() => {
   extStore.load();
   prefs.load();
@@ -528,6 +549,7 @@ app.whenReady().then(() => {
       popups: () => popups.map((p) => ({ id: p.wc.id, url: p.wc.getURL(), bounds: p.view.getBounds(), visible: p.wc.id === shownPopup })),
       shown: () => shownPopup,
       windows: () => BrowserWindow.getAllWindows().length,
+      update: () => updater?.state || null,
     };
   }
 
@@ -572,6 +594,12 @@ app.whenReady().then(() => {
 
   barView.webContents.loadURL('silo://app/bar.html');
   dividerView.webContents.loadURL('silo://app/divider.html');
+  // 자동 업데이트: 윈도 설치판에서만 (개발 중·맥·zip판에서는 끔). 테스트는 가짜 업데이터
+  const fakeUpdater = process.env.SILO_FAKE_UPDATE ? require(path.resolve(process.env.SILO_FAKE_UPDATE)) : null;
+  if (fakeUpdater || (app.isPackaged && process.platform === 'win32' && isInstalled())) {
+    updater = setupUpdater({ isBusy: correcting, onState: sendBar, log: logNet, updater: fakeUpdater, firstCheckMs: fakeUpdater ? 500 : undefined });
+  }
+
   // 패널 화면이 다 읽히면(시작 모션은 화면이 보이기를 기다리는 중) 화면을 보여 준다. 늦어도 4초 뒤에는 보여 줌
   panelView.webContents.once('dom-ready', endBoot);
   setTimeout(endBoot, 4000);

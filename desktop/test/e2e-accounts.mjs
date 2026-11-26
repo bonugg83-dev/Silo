@@ -58,7 +58,7 @@ if (shots) await panel.screenshot({ path: path.join(shots, 'desk-signup.png') })
 console.log('✓ 시작 모션 → 회원가입 화면 (창 전체)');
 
 async function signup(name, key) {
-  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
+  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김: 그 전에 다른 칸을 채우면 글자가 이름 칸으로 감
   await panel.fill('#newName', name);
   await panel.fill('#newPw1', 'pw-' + name);
   await panel.fill('#newPw1b', 'pw-' + name);

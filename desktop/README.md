@@ -45,14 +45,28 @@
 cd desktop
 npm install
 npm start               # 저장소의 ../extension 을 불러 실행
-npm test                # 전체 흐름 + 계정 테스트 (Playwright 필요, 리눅스 서버에서는 xvfb-run -a npm test)
-npm run dist:win        # dist/Silo-win32-x64 (Silo.exe), 확장 폴더는 resources/extension 으로 들어감
+npm test                # 전체 흐름 + 계정 + 팝업 + 자동 업데이트 테스트 (Playwright 필요, 리눅스 서버에서는 xvfb-run -a npm test)
+npm run dist:win        # dist/Silo-Setup-<버전>.exe (설치 파일, 배포는 안 함). 확장 폴더는 resources/extension 으로 들어감
 ```
+
+## 설치와 자동 업데이트 (윈도)
+
+- **처음 한 번**: [Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 실행합니다. 관리자 권한 없이 내 계정에 설치되고(`%LOCALAPPDATA%\Programs\Silo`), 시작 메뉴·바탕화면에 아이콘이 생깁니다. 예전 zip판에서 쓰던 계정·설정·마이픽 로그인은 그대로 이어집니다(`%APPDATA%\Silo`). zip판 폴더는 지워도 됩니다.
+- **그다음부터**: 앱을 켜면 8초 뒤, 그리고 켜 둔 동안 4시간마다 Releases에 새 버전이 있는지 확인하고 뒤에서 받아 둡니다. 다 받으면 위쪽 막대에 **새 버전 x.y.z · 다시 시작** 버튼이 뜹니다. 누르면 조용히 설치하고 다시 켭니다. 누르지 않아도 앱을 닫을 때 설치되어 다음에 켜면 새 버전입니다. 교정이 도는 중에는 눌러도 다시 시작하지 않습니다.
+- zip을 풀어 쓰는 앱과 개발 중(`npm start`)에는 업데이트를 확인하지 않습니다.
+
+### 새 버전 배포하기
+
+1. `desktop/package.json`의 `version`을 올립니다 (예: 0.3.0 → 0.3.1). 버전을 올리지 않으면 배포되지 않습니다.
+2. PR을 기본 브랜치에 머지하면 GitHub Actions(`.github/workflows/desktop.yml`)가 윈도에서 설치 파일을 만들어 Releases에 `v<버전>`으로 올립니다(`latest.yml` 포함).
+3. 설치한 앱들은 다음에 확인할 때 그 버전을 받아 갑니다.
+
+PR이나 다른 브랜치에서는 설치 파일만 만들어 Actions 결과물(Silo-Setup)로 남기고 배포하지 않습니다.
 
 서명하지 않은 빌드라 처음 실행할 때 윈도가 “Windows의 PC 보호” 경고를 띄웁니다. **추가 정보 → 실행**을 누르면 열립니다.
 
 ## 아직 남은 것
 
 - 실제 마이픽 사이트에서 로그인·편집하기 팝업 확인 (가짜 화면으로만 시험함)
-- 설치 프로그램(NSIS)과 자동 업데이트, 코드 서명, 앱 아이콘(.ico)
+- 코드 서명 (없으면 처음 설치할 때 윈도 경고), 맥 자동 업데이트 (애플 서명이 있어야 함)
 - 안드로이드 태블릿 앱 (같은 구조로 WebView에 올리기)

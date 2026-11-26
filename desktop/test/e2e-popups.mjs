@@ -34,7 +34,7 @@ await panel.waitForFunction(() => document.querySelector('canvas.splash'), null,
 await panel.waitForFunction(() => !document.querySelector('canvas.splash') && !document.body.classList.contains('splashing'), null, { timeout: 15000 });
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
-  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
+  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김: 그 전에 다른 칸을 채우면 글자가 이름 칸으로 감
   await panel.fill('#newName', 'kim'); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
   await panel.fill('#newKey', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
   await panel.fill('#newCode', 'TESTCODE');
