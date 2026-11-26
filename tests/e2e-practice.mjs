@@ -72,7 +72,8 @@ await panel.waitForFunction(() => document.body.classList.contains('settings-ope
 await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '2');
-await panel.click('#btnSaveAdvanced');
+await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장
+await panel.waitForFunction(() => /저장했어요/.test(document.querySelector('#advancedMsg').textContent));
 
 // 연습 페이지 열기 (설정 탭 버튼)
 const [practice] = await Promise.all([context.waitForEvent('page'), panel.click('#btnPractice2')]);
