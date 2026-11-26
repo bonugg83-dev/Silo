@@ -386,6 +386,11 @@ function layout() {
     dividerView.setBounds(dragging ? { x: 0, y: top, width: w, height: ch } : { x: sx, y: top, width: DIVIDER_W, height: ch });
   }
   // 왼쪽 칸: 보이는 팝업이 있으면 그 창을 마이픽 화면 위에 겹쳐 보여 줌
+  if (!full && updatedToast) {
+    const t = updatedToast;
+    updatedToast = '';
+    setTimeout(() => barView.webContents.send('bar:toast', t), 600);
+  }
   const shown = !full && popups.find((p) => p.wc.id === shownPopup);
   const sb = siteView.getBounds();
   for (const p of popups) {
@@ -524,6 +529,16 @@ function isInstalled() {
 function correcting() {
   return Object.entries(sessionStore).some(([k, v]) => k.startsWith('runlock:') && v && Date.now() - (v.at || 0) < 60000);
 }
+// 업데이트 뒤 처음 켰을 때: 로그인하고 위쪽 막대가 보이면 한 번 알려 줌
+let updatedToast = '';
+function checkUpdatedNotice() {
+  const v = app.getVersion();
+  const last = prefs.data.lastVersion;
+  // 0.3.0 이하는 버전을 적어 두지 않았으므로, 기록은 없지만 전에 쓰던 흔적(창 위치)이 있으면 업데이트로 본다
+  const usedBefore = last || prefs.data.bounds;
+  if (usedBefore && last !== v) updatedToast = `새 버전 ${v}로 업데이트했어요.`;
+  if (last !== v) { prefs.data.lastVersion = v; prefs.save(); }
+}
 function installUpdate() {
   if (!updater) return;
   const r = updater.install();
@@ -594,6 +609,7 @@ app.whenReady().then(() => {
 
   barView.webContents.loadURL('silo://app/bar.html');
   dividerView.webContents.loadURL('silo://app/divider.html');
+  checkUpdatedNotice();
   // 자동 업데이트: 윈도 설치판에서만 (개발 중·맥·zip판에서는 끔). 테스트는 가짜 업데이터
   const fakeUpdater = process.env.SILO_FAKE_UPDATE ? require(path.resolve(process.env.SILO_FAKE_UPDATE)) : null;
   if (fakeUpdater || (app.isPackaged && process.platform === 'win32' && isInstalled())) {
