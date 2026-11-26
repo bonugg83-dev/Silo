@@ -330,18 +330,15 @@ let quitting = false;
 let reviewOpen = false;
 let authOpen = false;   // 확장의 로그인/회원가입 화면이 떠 있음 → 로그인 전에는 패널만 창 전체로
 let splashOpen = false; // 시작 모션 → 창 전체에서 재생
-// 켜자마자 패널이 시작 모션·로그인 여부를 알려 오기 전까지는 패널(어두운 색)만 창 전체로.
-// 이게 없으면 그 사이에 흰 바탕의 사이트 화면이 잠깐 보여 화면이 하얗게 번쩍인다.
-let booting = true;
 let dragging = false;
 
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
   // 검수 창은 오른쪽 패널 안에서만 열림 (창 전체로 넓히지 않음)
-  const full = booting || authOpen || splashOpen;
+  const full = authOpen || splashOpen;
   const strip = !full && popups.length ? STRIP_H : 0; // 창 목록 줄
-  const top = full ? 0 : BAR_H + strip; // 시작 모션과 로그인 화면에서는 위쪽 막대도 숨김
+  const top = authOpen || splashOpen ? 0 : BAR_H + strip; // 시작 모션과 로그인 화면에서는 위쪽 막대도 숨김
   const ch = Math.max(0, h - top);
   barView.setBounds({ x: 0, y: 0, width: w, height: top });
   if (full) {
@@ -432,7 +429,6 @@ ipcMain.on('divider:drag', (_e, phase, x) => {
 });
 ipcMain.on('layout:mode', (e, mode) => {
   if (e.sender !== panelView.webContents) return;
-  booting = false;
   reviewOpen = !!mode.review;
   authOpen = !!mode.auth;
   splashOpen = !!mode.splash;
@@ -545,8 +541,6 @@ app.whenReady().then(() => {
   barView.webContents.loadURL('silo://app/bar.html');
   dividerView.webContents.loadURL('silo://app/divider.html');
   panelView.webContents.loadURL('silo://ext/sidepanel.html');
-  // 패널이 끝내 배치를 알려 오지 않아도 (오류 등) 5초 뒤에는 원래 배치로
-  setTimeout(() => { if (booting) { booting = false; layout(); } }, 5000);
   siteView.webContents.loadURL(process.env.SILO_START_URL || SITE_HOME);
 });
 
