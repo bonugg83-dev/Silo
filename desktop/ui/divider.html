@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' silo:; style-src 'unsafe-inline'; script-src 'self' silo:">
+<title>폭 조절</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #grip { position: absolute; inset: 0; cursor: col-resize; background: #0b0b0b; display: grid; place-items: center; }
+  #grip::after { content: ''; width: 2px; height: 40px; border-radius: 2px; background: #3a3a3a; transition: background .15s; }
+  #grip:hover::after, body.drag #grip::after { background: #4F9DFF; }
+  body.drag #grip { background: transparent; }
+  body.drag #grip::after { display: none; }
+</style>
+</head>
+<body>
+<div id="grip" role="separator" aria-orientation="vertical" aria-label="패널 폭 조절"></div>
+<script src="divider.js"></script>
+</body>
+</html>

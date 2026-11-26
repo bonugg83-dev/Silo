@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' silo:; style-src 'self' 'unsafe-inline' silo:; script-src 'self' silo:; font-src silo:">
+<title>Silo</title>
+<link rel="stylesheet" href="bar.css">
+</head>
+<body>
+<header class="bar">
+  <span class="brand" role="img" aria-label="Silo">S<span class="g">ı<span class="dot" aria-hidden="true"></span></span>lo</span>
+  <div class="nav" id="nav">
+    <button type="button" id="back" class="icon" aria-label="뒤로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <button type="button" id="forward" class="icon" aria-label="앞으로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+    <button type="button" id="reload" class="icon" aria-label="새로고침"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button>
+    <button type="button" id="home" class="addr" title="마이픽 첫 화면으로">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      <span id="where">마이픽</span>
+    </button>
+  </div>
+  <div class="right" id="right">
+    <button type="button" id="practice" class="pill">연습 페이지</button>
+    <button type="button" id="togglePanel" class="icon" aria-label="패널 접기" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+  </div>
+</header>
+<script src="bar.js"></script>
+</body>
+</html>

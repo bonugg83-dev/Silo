@@ -1,0 +1,23 @@
+name: 데스크톱 앱 빌드
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['desktop/**', 'extension/**', '.github/workflows/desktop.yml']
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run dist:win
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Silo-win32-x64
+          path: desktop/dist/Silo-win32-x64

@@ -1,0 +1,26 @@
+@font-face { font-family: 'Libre Caslon Text'; font-weight: 700; src: url('silo://ext/fonts/LibreCaslonText-Bold-latin.woff2') format('woff2'); }
+:root { color-scheme: dark; --bg: #0b0b0b; --fg: #f1f1f1; --muted: #9a9a9a; --box: #1c1c1c; --line: #2c2c2c; --blue: #4F9DFF; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+  font: 13px/1.4 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; user-select: none; }
+.bar { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
+.brand { font-family: 'Libre Caslon Text', Georgia, serif; font-weight: 700; font-size: 23px; color: #F4F4F2; line-height: 1; display: inline-flex; letter-spacing: .01em; }
+.brand .g { position: relative; }
+.brand .dot { position: absolute; left: 50%; top: .03em; width: .2em; height: .2em; border-radius: 50%; background: var(--blue); transform: translateX(-50%); }
+.nav { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; }
+.right { display: flex; align-items: center; gap: 6px; }
+button { font: inherit; color: var(--fg); background: none; border: none; cursor: pointer; }
+button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.icon { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: #cfcfcf; transition: background .15s; }
+.icon:hover { background: #1f1f1f; }
+.icon:disabled { color: #4a4a4a; cursor: default; background: none; }
+.icon svg, .addr svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon[aria-pressed="true"] { color: var(--blue); }
+.addr { flex: 1; min-width: 0; max-width: 640px; height: 32px; margin-left: 8px; padding: 0 14px; border-radius: 999px; background: var(--box);
+  color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-align: left; }
+.addr svg { width: 13px; height: 13px; flex-shrink: 0; }
+.addr span { overflow: hidden; text-overflow: ellipsis; }
+.addr b { color: var(--fg); font-weight: 500; }
+.pill { height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: #121212; transition: border-color .15s; }
+.pill:hover { border-color: #555; }
+body.locked .nav, body.locked .right { visibility: hidden; }
