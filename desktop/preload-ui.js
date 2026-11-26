@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('silo', {
   onState: (f) => ipcRenderer.on('bar:state', (_e, s) => f(s)),
   onToast: (f) => ipcRenderer.on('bar:toast', (_e, t) => f(t)),
   drag: (phase, x) => ipcRenderer.send('divider:drag', phase, x),
+  brandRect: (r) => ipcRenderer.send('bar:brand', r),
 });

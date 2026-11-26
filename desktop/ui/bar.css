@@ -1,12 +1,12 @@
-@font-face { font-family: 'Libre Caslon Text'; font-weight: 700; src: url('silo://ext/fonts/LibreCaslonText-Bold-latin.woff2') format('woff2'); }
-:root { color-scheme: dark; --bg: #0b0b0b; --fg: #f1f1f1; --muted: #9a9a9a; --box: #1c1c1c; --line: #2c2c2c; --blue: #4F9DFF; }
+:root { color-scheme: dark; --bg: #0b0b0b; --fg: #f1f1f1; --muted: #9a9a9a; --box: #1c1c1c; --line: #2c2c2c; --brand-ink: #f4f4f2; --brand-dot: #4f9dff; --blue: var(--brand-dot); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
   font: 13px/1.4 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; user-select: none; }
 .bar { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
-.brand { font-family: 'Libre Caslon Text', Georgia, serif; font-weight: 700; font-size: 23px; color: #F4F4F2; line-height: 1; display: inline-flex; letter-spacing: .01em; }
-.brand .g { position: relative; }
-.brand .dot { position: absolute; left: 50%; top: .03em; width: .2em; height: .2em; border-radius: 50%; background: var(--blue); transform: translateX(-50%); }
+/* Silo 로고: extension/brand/silo.svg 와 같은 윤곽선 (글자 크기 23px 기준) */
+.brand { display: block; flex-shrink: 0; font-size: 23px; width: 2.005em; height: 1.23em; }
+.brand .ink { fill: var(--brand-ink); }
+.brand .dot { fill: var(--brand-dot); }
 .nav { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; }
 .right { display: flex; align-items: center; gap: 6px; }
 button { font: inherit; color: var(--fg); background: none; border: none; cursor: pointer; }
