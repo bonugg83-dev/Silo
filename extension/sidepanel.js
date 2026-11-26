@@ -328,12 +328,19 @@ async function monthUsd(id = pid()) {
   const k = costMonthKey(id);
   return (await chrome.storage.local.get(k))[k] || 0;
 }
+let costChain = Promise.resolve();
 async function addCost(usd) {
   if (!usd || !pid()) return;
   const k = costKey(pid());
   const mk = costMonthKey(pid());
-  const r = await chrome.storage.local.get([k, mk]);
-  await chrome.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
+  // 읽고-더하고-쓰기를 한 번에 하나씩 (목차 비용과 쪽 비용이 겹쳐도 빠지지 않게)
+  let r;
+  const job = costChain.then(async () => {
+    r = await chrome.storage.local.get([k, mk]);
+    await chrome.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
+  });
+  costChain = job.catch(() => {});
+  await job;
   pushCost({ usd });
   // 월 한도에 닿으면 자동모드는 이 쪽까지만
   if (autoRunning && overLimit(me(), (r[mk] || 0) + usd)) {
@@ -353,13 +360,19 @@ async function logPage(entry) {
 }
 // 비용 합계는 온라인에도 (여러 컴퓨터 합계). 올리지 못한 건 모아 두었다가 다음에 올림
 const pendKey = (id) => `cloudpending:${id}`;
-async function pushCost(c) {
+// 대기 목록 읽고-쓰기는 한 번에 하나씩 (비용·쪽 수가 동시에 들어오면 하나가 지워지지 않게)
+let pendChain = Promise.resolve();
+function pushCost(c) {
   const id = pid();
-  if (!me()?.uid) return;
+  if (!me()?.uid) return Promise.resolve();
   const k = pendKey(id);
-  const list = [...((await chrome.storage.local.get(k))[k] || []), { ...c, day: today() }];
-  await chrome.storage.local.set({ [k]: list });
-  await flushCost();
+  const entry = { ...c, day: today() };
+  const job = pendChain.then(async () => {
+    const list = [...((await chrome.storage.local.get(k))[k] || []), entry];
+    await chrome.storage.local.set({ [k]: list });
+  });
+  pendChain = job.catch(() => {});
+  return job.then(() => flushCost());
 }
 let flushing = false;
 async function flushCost() {
@@ -373,9 +386,12 @@ async function flushCost() {
       if (!(await quietly((s) => cloud.addCost(s, c)))) break;
       done++;
     }
+    // 주의: 서버에는 더해졌는데 응답만 못 받으면 다음에 다시 보내 두 번 더해질 수 있다 (드묾. 막으려면 서버 구조를 바꿔야 함)
     if (done) {
-      const now = (await chrome.storage.local.get(k))[k] || [];
-      await chrome.storage.local.set({ [k]: now.slice(done) });
+      await (pendChain = pendChain.then(async () => {
+        const now = (await chrome.storage.local.get(k))[k] || [];
+        await chrome.storage.local.set({ [k]: now.slice(done) });
+      }).catch(() => {}));
     }
   } finally { flushing = false; }
 }
@@ -921,7 +937,10 @@ async function analyze() {
   const r1 = await call({ images: [sent.dataUrl], userText: buildWriteMessage(ctx), cacheUser: !!(settings.verify || settings.zoom) });
   stepper.aiFrom = 0;
   stepper.reach('foot');
-  cost += estimateCostUsd(settings.model, r1.usage);
+  // 비용은 부를 때마다 바로 더한다 (뒤에서 오류가 나도 이미 쓴 돈은 기록)
+  const c1 = estimateCostUsd(settings.model, r1.usage);
+  cost += c1;
+  addCost(c1);
   const result = r1.result;
   const ruleOpts = { dashSpacing: settings.dashSpacing, unitSymbols: settings.unitSymbols, allowBlankLines: !!result.has_poem_or_quote };
   let checked = applyRules(result.text, ruleOpts);
@@ -951,7 +970,9 @@ async function analyze() {
           full: !!settings.verifyFull, zoomed: zoomImgs.length > 0, unsure: unsure.map((f) => f.quote || f.message).filter(Boolean),
         }),
       });
-      cost += estimateCostUsd(settings.model, r2.usage);
+      const c2 = estimateCostUsd(settings.model, r2.usage);
+      cost += c2;
+      addCost(c2);
       r2usage = r2.usage;
       // 2차가 원본(확대본)으로 다시 본 곳은 1차 표시를 떼고, 2차가 여전히 모르겠다고 한 것만 남긴다
       for (const f of unsure) checkedByVerify.add(f);
@@ -1011,7 +1032,6 @@ async function analyze() {
     extraFlags.push({ kind: 'other', needs_review: true, quote: '', message: `${PAGE_KIND[result.page_kind]}로 처리했는데 OCR 글자가 많음` });
   }
   stepper.reach('check');
-  addCost(cost);
   const sumUsage = (...us) => us.filter(Boolean).reduce((a, u) => ({
     in: a.in + (u.input_tokens || 0), cw: a.cw + (u.cache_creation_input_tokens || 0),
     cr: a.cr + (u.cache_read_input_tokens || 0), out: a.out + (u.output_tokens || 0),

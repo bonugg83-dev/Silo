@@ -16,6 +16,16 @@ export class ClaudeError extends Error {
   }
 }
 
+/** 기다리기 (signal이 취소되면 바로 끝냄) */
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason ?? new DOMException('Aborted', 'AbortError')); return; }
+    const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    function onAbort() { clearTimeout(t); reject(signal.reason ?? new DOMException('Aborted', 'AbortError')); }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function parseDataUrl(dataUrl) {
   const m = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
   if (!m) throw new ClaudeError('이미지 형식을 읽을 수 없어요.');
@@ -72,14 +82,26 @@ export async function callClaude(params) {
   }
 
   let res;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers, body: JSON.stringify(body), signal,
-    });
+  const payload = JSON.stringify(body);
+  const TRIES = 4;
+  for (let attempt = 0; attempt < TRIES; attempt++) {
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', headers, body: payload, signal,
+      });
+    } catch (e) {
+      // 연결 자체가 잠깐 끊긴 것(Failed to fetch 등)도 기다렸다가 다시 시도
+      if (e?.name === 'AbortError' || attempt === TRIES - 1) {
+        if (e?.name === 'AbortError') throw e;
+        throw new ClaudeError(`Claude에 연결하지 못했어요: ${e?.message || e}`, { retryable: true });
+      }
+      await sleep(2000 * 2 ** attempt, signal);
+      continue;
+    }
     if (res.status === 429 || res.status === 529 || res.status >= 500) {
-      if (res.headers.get('x-should-retry') === 'false') break;
+      if (res.headers.get('x-should-retry') === 'false' || attempt === TRIES - 1) break;
       const wait = Number(res.headers.get('retry-after')) * 1000 || 2000 * 2 ** attempt;
-      await new Promise((r) => setTimeout(r, Math.min(wait, 30000)));
+      await sleep(Math.min(wait, 30000), signal);
       continue;
     }
     break;

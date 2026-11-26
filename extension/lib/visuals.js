@@ -98,10 +98,11 @@ export async function cropImage(dataUrl, box, { pad = 0.01, trim = true } = {}) 
   let y0 = Math.max(0, Math.floor((box.y - pad) * H));
   let x1 = Math.min(W, Math.ceil((box.x + box.w + pad) * W));
   let y1 = Math.min(H, Math.ceil((box.y + box.h + pad) * H));
-  if (x1 - x0 < 4 || y1 - y0 < 4) throw new Error('잘라낼 영역이 너무 작아요.');
+  if (x1 - x0 < 4 || y1 - y0 < 4) { bmp.close?.(); throw new Error('잘라낼 영역이 너무 작아요.'); }
   let canvas = new OffscreenCanvas(x1 - x0, y1 - y0);
   let ctx = canvas.getContext('2d');
   ctx.drawImage(bmp, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+  bmp.close?.(); // 풀어 둔 원본 이미지를 바로 메모리에서 내림
   if (trim) {
     // 가장자리의 흰 여백을 다듬되 4px은 남긴다
     const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
