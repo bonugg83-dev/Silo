@@ -333,14 +333,6 @@ let splashOpen = false; // 시작 모션 → 창 전체에서 재생
 // 켜자마자 패널이 시작 모션·로그인 여부를 알려 오기 전까지는 패널(어두운 색)만 창 전체로.
 // 이게 없으면 그 사이에 흰 바탕의 사이트 화면이 잠깐 보여 화면이 하얗게 번쩍인다.
 let booting = true;
-// 창은 숨긴 채 만들고, 패널이 어두운 화면을 그린 뒤에 처음 보여 준다
-let shown = false;
-function showWindow() {
-  if (shown || !win || win.isDestroyed()) return;
-  shown = true;
-  if (prefs.data.maximized) win.maximize(); // 숨긴 창을 최대화하면 바로 보이므로 여기서
-  win.show();
-}
 let dragging = false;
 
 function layout() {
@@ -441,8 +433,6 @@ ipcMain.on('divider:drag', (_e, phase, x) => {
 ipcMain.on('layout:mode', (e, mode) => {
   if (e.sender !== panelView.webContents) return;
   booting = false;
-  // 배치가 바뀐 화면이 한 번 그려질 틈을 두고 창을 보여 준다
-  if (!shown) setTimeout(showWindow, 80);
   reviewOpen = !!mode.review;
   authOpen = !!mode.auth;
   splashOpen = !!mode.splash;
@@ -523,9 +513,8 @@ app.whenReady().then(() => {
     width: b?.width || 1500, height: b?.height || 960, x: b?.x, y: b?.y,
     minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#0b0b0b', autoHideMenuBar: true,
     icon: path.join(EXT_DIR, 'icon128.png'),
-    // 켜자마자 빈 창(윈도는 흰색)이 보이지 않게, 어두운 패널이 그려진 뒤에 보여 준다 (showWindow)
-    show: false,
   });
+  if (prefs.data.maximized) win.maximize();
   shimPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-shim.js'), contextIsolation: false, sandbox: true };
   const uiPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-ui.js'), contextIsolation: true, sandbox: true };
 
@@ -558,9 +547,6 @@ app.whenReady().then(() => {
   panelView.webContents.loadURL('silo://ext/sidepanel.html');
   // 패널이 끝내 배치를 알려 오지 않아도 (오류 등) 5초 뒤에는 원래 배치로
   setTimeout(() => { if (booting) { booting = false; layout(); } }, 5000);
-  // 패널 소식이 늦어도 창은 뜨게: 패널이 그려지면 잠시 뒤, 늦어도 3초
-  panelView.webContents.once('did-finish-load', () => setTimeout(showWindow, 400));
-  setTimeout(showWindow, 3000);
   siteView.webContents.loadURL(process.env.SILO_START_URL || SITE_HOME);
 });
 
