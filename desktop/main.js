@@ -331,10 +331,37 @@ let reviewOpen = false;
 let authOpen = false;   // 확장의 로그인/회원가입 화면이 떠 있음 → 로그인 전에는 패널만 창 전체로
 let splashOpen = false; // 시작 모션 → 창 전체에서 재생
 let dragging = false;
+// 켜는 중: 화면(사이트·패널·막대)이 준비되기 전에는 아무것도 보이지 않고 창 바탕(검정)만 보인다.
+// 사이트 화면(흰 바탕)이나 아직 안 그려진 화면이 잠깐 하얗게 보이지 않게.
+// 창 자체는 숨기지 않는다 (숨기면 늦게 뜨고, 크기가 바뀌어 시작 모션 좌표가 틀어짐).
+let booting = true;
+let revealWaiters = [];
+function endBoot() {
+  if (!booting) return;
+  booting = false;
+  layout();
+  if (win && !win.isDestroyed()) win.setOpacity(1); // 이제 창을 보여 줌 (그 전에는 투명)
+  // 패널의 시작 모션은 화면이 실제로 보인 뒤에 시작한다 (그때 창 크기를 읽음)
+  for (const r of revealWaiters) r(true);
+  revealWaiters = [];
+}
+ipcMain.handle('boot:revealed', () => (booting ? new Promise((r) => revealWaiters.push(r)) : true));
 
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
+  const views = [barView, siteView, panelView, dividerView];
+  if (booting) {
+    // 크기는 미리 정해 두되(패널은 창 전체) 보이지는 않게
+    for (const v of views) v.setVisible(false);
+    for (const p of popups) p.view.setVisible(false);
+    barView.setBounds({ x: 0, y: 0, width: w, height: 0 });
+    siteView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    dividerView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    panelView.setBounds({ x: 0, y: 0, width: w, height: h });
+    return;
+  }
+  for (const v of [barView, panelView, dividerView]) v.setVisible(true);
   // 검수 창은 오른쪽 패널 안에서만 열림 (창 전체로 넓히지 않음)
   const full = authOpen || splashOpen;
   const strip = !full && popups.length ? STRIP_H : 0; // 창 목록 줄
@@ -507,10 +534,15 @@ app.whenReady().then(() => {
   const b = prefs.data.bounds;
   win = new BaseWindow({
     width: b?.width || 1500, height: b?.height || 960, x: b?.x, y: b?.y,
-    minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#0b0b0b', autoHideMenuBar: true,
-    icon: path.join(EXT_DIR, 'icon128.png'),
+    minWidth: 900, minHeight: 600, title: 'Silo', backgroundColor: '#000000', autoHideMenuBar: true,
+    icon: path.join(EXT_DIR, 'icon128.png'), show: false,
   });
-  if (prefs.data.maximized) win.maximize();
+  // 윈도는 새 창을 처음 그릴 때 하얗게 칠하고, 원래 크기로 띄운 뒤 최대화하면 그 크기의 흰 사각형이 잠깐 보인다.
+  // 그래서 창을 완전히 투명하게 둔 채 처음부터 최대화(또는 그냥) 상태로 띄우고, 패널이 준비되면(endBoot) 보이게 한다.
+  // 창은 실제로 떠 있으므로 크기는 처음부터 맞다 (시작 모션은 endBoot 뒤에 크기를 읽음).
+  win.setOpacity(0);
+  if (prefs.data.maximized) win.maximize(); // 숨은 창은 최대화하면서 바로 뜬다
+  else win.show();
   shimPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-shim.js'), contextIsolation: false, sandbox: true };
   const uiPrefs = { partition: APP_PARTITION, preload: path.join(__dirname, 'preload-ui.js'), contextIsolation: true, sandbox: true };
 
@@ -520,7 +552,7 @@ app.whenReady().then(() => {
   dividerView = new WebContentsView({ webPreferences: uiPrefs });
   dividerView.setBackgroundColor('#00000000');
   panelView = new WebContentsView({ webPreferences: shimPrefs });
-  panelView.setBackgroundColor('#121212');
+  panelView.setBackgroundColor('#000000'); // 패널 글이 그려지기 전 첫 화면도 검정
   for (const v of [barView, siteView, panelView, dividerView]) win.contentView.addChildView(v);
   layout();
   win.on('resize', layout);
@@ -540,6 +572,9 @@ app.whenReady().then(() => {
 
   barView.webContents.loadURL('silo://app/bar.html');
   dividerView.webContents.loadURL('silo://app/divider.html');
+  // 패널 화면이 다 읽히면(시작 모션은 화면이 보이기를 기다리는 중) 화면을 보여 준다. 늦어도 4초 뒤에는 보여 줌
+  panelView.webContents.once('dom-ready', endBoot);
+  setTimeout(endBoot, 4000);
   panelView.webContents.loadURL('silo://ext/sidepanel.html');
   siteView.webContents.loadURL(process.env.SILO_START_URL || SITE_HOME);
 });

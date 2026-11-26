@@ -49,7 +49,9 @@ export function editorHtmlToText(html) {
 /** 이미지 크기 */
 export async function imageSize(dataUrl) {
   const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
-  return { width: bmp.width, height: bmp.height };
+  const size = { width: bmp.width, height: bmp.height };
+  bmp.close?.();
+  return size;
 }
 
 /** 긴 변이 maxSide보다 크면 줄인다. {dataUrl, width, height} */
@@ -59,7 +61,9 @@ export async function downscaleImage(dataUrl, maxSide = 2000) {
   const bmp = await createImageBitmap(blob);
   const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
   if (scale === 1 && okType && blob.size < 4.5 * 1024 * 1024) {
-    return { dataUrl: dataUrl.replace(/^data:[^;]+/, `data:${blob.type}`), width: bmp.width, height: bmp.height };
+    const same = { dataUrl: dataUrl.replace(/^data:[^;]+/, `data:${blob.type}`), width: bmp.width, height: bmp.height };
+    bmp.close?.();
+    return same;
   }
   const w = Math.round(bmp.width * scale);
   const h = Math.round(bmp.height * scale);
@@ -68,6 +72,7 @@ export async function downscaleImage(dataUrl, maxSide = 2000) {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.(); // 풀어 둔 원본 이미지를 바로 메모리에서 내림
   const out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
   const url = await new Promise((resolve, reject) => {
     const r = new FileReader();

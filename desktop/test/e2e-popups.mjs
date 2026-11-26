@@ -29,7 +29,9 @@ async function find(re, timeout = 15000) {
 }
 const panel = await find(/sidepanel\.html/);
 panel.on('dialog', (d) => d.accept());
-await panel.waitForFunction(() => !document.querySelector('canvas.splash'), null, { timeout: 15000 });
+// 시작 모션은 앱이 화면을 보여 준 뒤에 시작하므로, 나타났다가 사라질 때까지 기다림
+await panel.waitForFunction(() => document.querySelector('canvas.splash'), null, { timeout: 15000 });
+await panel.waitForFunction(() => !document.querySelector('canvas.splash') && !document.body.classList.contains('splashing'), null, { timeout: 15000 });
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
   if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');

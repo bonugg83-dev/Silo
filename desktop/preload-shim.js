@@ -114,6 +114,23 @@ if (location.pathname === '/sidepanel.html') {
     expectSplash = localStorage.getItem('silo-splash-day') !== new Date().toLocaleDateString('sv')
       && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   } catch {}
+  // 켜는 중 덮개: 시작 모션이 끝날 때까지(모션이 없으면 첫 배치까지) 패널 글은 감추고 바탕은 검정.
+  // 모션 캔버스만 보인다. 모션은 바탕색을 시작할 때 읽으므로 모션도 검정 바탕에서 나온다.
+  const cover = document.createElement('style');
+  cover.textContent = 'html,body{background:#000!important}body>:not(canvas.splash){visibility:hidden!important}';
+  // 이 코드가 돌 때는 아직 <html>이 없을 수 있어서, 생기는 순간 붙인다
+  let covered = true;
+  const putCover = () => { if (covered && document.documentElement && !cover.isConnected) document.documentElement.appendChild(cover); return !!document.documentElement; };
+  if (!putCover()) {
+    const mo = new MutationObserver(() => { if (putCover()) mo.disconnect(); });
+    mo.observe(document, { childList: true });
+  }
+  const uncover = () => { covered = false; cover.remove(); };
+  // 시작 모션은 앱이 화면을 보여 준 뒤에 시작 (숨은 동안 창 크기를 읽으면 로고 크기·도착 자리가 틀어짐)
+  window.__siloSplashReady = Promise.race([
+    ipcRenderer.invoke('boot:revealed').catch(() => true),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
   let last = '';
   const send = (mode) => {
     const k = JSON.stringify(mode);
@@ -130,10 +147,12 @@ if (location.pathname === '/sidepanel.html') {
   const report = () => {
     const c = document.body.classList;
     if (c.contains('splashing')) sawSplash = true;
-    send({ review: c.contains('review-open'), auth: c.contains('auth-open'), splash: c.contains('splashing') || (expectSplash && !sawSplash) });
+    const splash = c.contains('splashing') || (expectSplash && !sawSplash);
+    if (!splash) uncover(); // 모션이 끝났거나 없음 → 패널 글을 보여 줌 (모션 캔버스가 흐려지며 드러남)
+    send({ review: c.contains('review-open'), auth: c.contains('auth-open'), splash });
   };
-  // 모션이 끝내 시작되지 않으면(글꼴 실패 등) 잠시 뒤 원래 배치로
-  setTimeout(() => { expectSplash = false; if (document.body) report(); }, 3000);
+  // 모션이 끝내 시작되지 않으면(글꼴 실패 등) 화면이 보인 뒤 잠시 뒤 원래 배치로
+  window.__siloSplashReady.then(() => setTimeout(() => { expectSplash = false; if (document.body) report(); else uncover(); }, 3000));
   window.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.textContent = 'html.silo-side .hd .brand{visibility:hidden}';
