@@ -121,7 +121,8 @@ await panel.click('#btnOpenSettings');
 await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '2');
 await panel.fill('#paceMaxSec', '3');
-await panel.click('#btnSaveAdvanced');
+await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장 (저장 버튼 없음)
+await panel.waitForFunction(() => /저장했어요/.test(document.querySelector('#advancedMsg').textContent));
 await panel.click('#btnCloseSettings');
 await panel.click('#btnAuto');
 await panel.click('#btnAnalyze');

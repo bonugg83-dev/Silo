@@ -22,13 +22,13 @@ body { margin: 0; background: var(--panel); color: var(--fg); font: 14px/1.5 sys
 [hidden] { display: none !important; }
 h3 { font-size: var(--fs-sm); margin: 0 0 6px; }
 button { font: inherit; color: var(--fg); border: none; cursor: pointer; background: none; }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+/* 키보드로 옮겨 갈 때만 보이는 흰 외곽선: 버튼·켜고 끄기만 (마우스로 누를 땐 안 보임) */
+button:focus-visible, input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 input[type=text], input[type=password], input[type=number], select, textarea {
   font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: var(--r-m); padding: 7px 10px;
 }
-/* 마우스로 누를 때만 외곽선을 숨기고, 키보드로 옮겨 가면 흰 외곽선이 보이게 */
-input:focus:not(:focus-visible), select:focus:not(:focus-visible), textarea:focus:not(:focus-visible) { outline: none; }
-input:focus, select:focus, textarea:focus { border-color: #9a9a9a; }
+/* 입력칸(글·숫자·비밀번호·선택)은 눌러도 바깥 흰 줄 없이 칸 테두리만 밝아짐 */
+input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { outline: none; border-color: #9a9a9a; }
 select option { background: var(--panel); }
 
 /* 얇은 스크롤바 */
@@ -258,6 +258,12 @@ body.review-open { overflow: hidden; }
 .adv-in > :first-child { margin-top: 2px; }
 .opt { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--sub); font-size: var(--fs-md); min-height: var(--h-sm); cursor: pointer; }
 .opt.sub { cursor: default; margin-top: -4px; }
+/* 옵션마다 한 쪽에 더 드는 비용 */
+.opt-t { display: flex; flex-direction: column; gap: 1px; padding: 4px 0; }
+.opt-t .hint { color: var(--muted); font-size: var(--fs-sm); }
+.opt-t .hint:empty { display: none; }
+.cost-total { margin: 2px 0 6px; }
+.cost-total b { color: var(--fg); font-weight: 600; }
 select.sm { height: var(--h-sm); padding: 0 8px; font-size: var(--fs-sm); }
 input.num { width: 64px; height: var(--h-sm); padding: 0 8px; font-size: var(--fs-sm); }
 input.num.wide { width: 92px; }

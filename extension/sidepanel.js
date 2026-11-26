@@ -20,6 +20,7 @@ import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
+import { optionCosts, costLabel } from './lib/costs.js';
 import { playSplash } from './lib/splash.js';
 import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
@@ -141,6 +142,12 @@ async function openProfile(p, apiKey, ses = null) {
   showTodayCost();
   refreshStatus();
   if (cloudSes) syncCost();
+  refreshShared({ force: true }).catch(() => {});
+  loginCheckAt = 0;
+  (async () => { // 이미 열린 마이픽 창이 있으면 로그인 확인
+    const [t] = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
+    if (t) autoFeedback(t.id);
+  })().catch(() => {});
 }
 async function lock() {
   if (running) { msg('settingsMsg', '교정이 끝난 뒤 로그아웃할 수 있어요.'); return; }
@@ -536,18 +543,43 @@ function fillForms() {
   sel.value = settings.model;
   for (const [id, prop] of Object.entries(ADV_FIELDS)) $(id)[prop] = settings[id];
   $('paceBox').classList.toggle('open', !!settings.pacing);
+  showOptionCosts();
   renderMe();
 }
-async function saveAdvanced() {
+/**
+ * 상세 설정은 바꾸는 즉시 저장 (저장 버튼 없음).
+ * typing: 숫자 칸에 입력하는 중 — 칸 값을 고쳐 쓰지 않고 저장만. 칸을 벗어나면(change) 최소·최대를 맞춰 보여 줌
+ */
+async function saveAdvanced({ typing = false } = {}) {
   for (const [id, prop] of Object.entries(ADV_FIELDS)) {
     let v = $(id)[prop];
     if (['imageMax', 'timeWarnMin', 'paceMinSec', 'paceMaxSec'].includes(id)) v = Math.max(0, Number(v) || 0);
     settings[id] = v;
   }
   if (settings.paceMaxSec < settings.paceMinSec) settings.paceMaxSec = settings.paceMinSec;
-  fillForms();
+  if (!typing) fillForms();
   await persist();
   msg('advancedMsg', '저장했어요.');
+  showOptionCosts();
+}
+/** 상세 설정 옵션 옆에 한 쪽에 더 드는 비용, 맨 위에 지금 설정의 쪽당 합계 */
+async function showOptionCosts() {
+  let log = [];
+  try { log = (await chrome.storage.local.get('usageLog')).usageLog || []; } catch {}
+  const c = optionCosts(settings.model, settings, log);
+  const tag = (m) => (m ? ' · 실제 기록' : '');
+  $('costVerify').textContent = `켜면 한 쪽에 ${costLabel(c.verify)}${tag(c.measured.verify)}`;
+  $('costFull').textContent = `2차 검증을 켰을 때 한 쪽에 ${costLabel(c.full)} 더${tag(c.measured.full)}`;
+  $('costZoom').textContent = `필요한 쪽(약 ${Math.round(c.zoomShare * 100)}%)만 ${costLabel(c.zoom + (settings.verify ? 0 : c.verify))}${tag(c.measured.zoom)}`;
+  const anyMeasured = Object.values(c.measured).some(Boolean);
+  $('costTotal').innerHTML = '';
+  $('costTotal').append('지금 설정이면 한 쪽에 약 ', Object.assign(document.createElement('b'), { textContent: costLabel(c.total, { plus: false }) }),
+    anyMeasured ? ` (최근 ${c.samples}쪽 기록 반영)` : ' (예상값, 교정한 쪽이 쌓이면 실제 기록으로 바뀜)');
+}
+let advTimer;
+for (const [id, prop] of Object.entries(ADV_FIELDS)) {
+  $(id).addEventListener('change', () => { clearTimeout(advTimer); saveAdvanced(); });
+  if (prop === 'value') $(id).addEventListener('input', () => { clearTimeout(advTimer); advTimer = setTimeout(() => saveAdvanced({ typing: true }), 600); });
 }
 function msg(id, text) {
   $(id).textContent = text;
@@ -690,22 +722,24 @@ async function getEditorTab() {
 }
 // ---------- 관리자 피드백 ----------
 // chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
-const FEEDBACK_EVERY_MS = 12 * 60 * 60 * 1000;
+// 내 피드백: 마이픽 로그인을 확인한 때(마이페이지를 실제로 읽을 수 있을 때) 지난 기록과 비교해 새 것만 가져와 모두의 목록에 올림
+// 모두의 피드백: 마이픽과 상관없이 Silo 로그인할 때, 그리고 교정 시작 때 30분이 지났으면 서버에서 받음
+const SHARED_EVERY_MS = 30 * 60 * 1000;
+const LOGIN_RETRY_MS = 60 * 1000; // 마이픽에 아직 로그인 전이면 다음 쪽이 열릴 때 다시 확인 (1분에 한 번까지)
 const feedbackKey = () => `feedback:${pid()}`;
 async function loadFeedback() {
   const { [feedbackKey()]: feedback } = await chrome.storage.local.get(feedbackKey());
   return { list: [], counts: {}, at: 0, pushed: [], shared: [], sharedAt: 0, ...(feedback || {}) };
 }
 let feedbackBusy = null;
-/** 마이픽 마이페이지에서 피드백을 읽어 와 저장하고, 새 것은 모두의 목록에 올리고, 모두의 목록을 받아 둔다 */
-function syncFeedback({ manual = false } = {}) {
+/** 마이픽 마이페이지에서 피드백을 읽어 와(지난 기록과 건수가 달라진 책만) 저장하고, 새 것은 모두의 목록에 올리고, 모두의 목록을 받아 둔다 */
+function syncFeedback({ tabId = null } = {}) {
   if (feedbackBusy) return feedbackBusy;
   feedbackBusy = (async () => {
     const fb = await loadFeedback();
-    if (!manual && Date.now() - fb.at < FEEDBACK_EVERY_MS) return { fb, added: 0, skipped: true };
     const tabs = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
     const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tab = tabs.find((x) => x.id === active?.id) || tabs[0];
+    const tab = tabs.find((x) => x.id === tabId) || tabs.find((x) => x.id === active?.id) || tabs[0];
     if (!tab) throw new Error('마이픽 사이트 창이 열려 있어야 피드백을 가져올 수 있어요.');
     const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: pageFetchMyFeedback, args: [fb.counts] });
     const got = r?.result;
@@ -730,6 +764,39 @@ function syncFeedback({ manual = false } = {}) {
     return { fb: next, added: added.length };
   })().finally(() => { feedbackBusy = null; });
   return feedbackBusy;
+}
+/** 모두의 피드백만 서버에서 받기 (다른 사용자가 올린 피드백이 내 교정에도 들어가게). force가 아니면 30분에 한 번 */
+async function refreshShared({ force = false } = {}) {
+  if (!pid() || !online()) return;
+  const id = pid();
+  const fb = await loadFeedback();
+  if (!force && Date.now() - (fb.sharedAt || 0) < SHARED_EVERY_MS) return;
+  if (feedbackBusy) return; // 마이픽 피드백을 가져오는 중이면 그쪽이 모두의 목록도 받음
+  let shared;
+  if (!(await quietly(async (s) => { shared = await cloud.listFeedback(s); }))) return;
+  if (pid() !== id || feedbackBusy) return; // 그새 다른 계정으로 바뀌었거나, 가져오기가 시작돼 그쪽이 저장함
+  const now = await loadFeedback(); // 그사이 바뀐 내 기록은 살림
+  if (pid() !== id || feedbackBusy) return; // (읽는 사이 가져오기가 시작되면 덮어쓰지 않음)
+  const next = { ...now, shared, sharedAt: Date.now() };
+  await chrome.storage.local.set({ [feedbackKey()]: next });
+  paintFeedback(next);
+}
+// 마이픽 로그인 확인 → 새 피드백 자동으로 가져오기 (이 실행에서 Silo 계정마다 한 번)
+const feedbackDone = new Set();   // 이번 실행에서 가져온 Silo 계정
+let loginCheckAt = 0;
+async function autoFeedback(tabId) {
+  const id = pid();
+  if (!id || running || feedbackDone.has(id) || feedbackBusy) return;
+  if (Date.now() - loginCheckAt < LOGIN_RETRY_MS) return;
+  loginCheckAt = Date.now();
+  try {
+    const r = await syncFeedback({ tabId });
+    feedbackDone.add(id); // 로그인 확인됨 (마이페이지를 읽음)
+    if (r.added && pid() === id) setProgress(`새 관리자 피드백 ${r.added}건을 가져왔어요. 다음 쪽부터 반영해요.`);
+  } catch (e) {
+    // 마이픽 로그인 전이거나 사이트 창이 없음: 다음에 마이픽 쪽이 열릴 때 다시 확인
+    console.debug('피드백 자동 가져오기 건너뜀:', e?.message || e);
+  }
 }
 function paintFeedback(fb) {
   const el = $('feedbackInfo');
@@ -904,7 +971,7 @@ async function analyze() {
   const pendingFootnotes = [info.currPage - 2, info.currPage - 1]
     .flatMap((p) => (book.pages[p]?.footMissing || []).filter((l) => !linked.has(`${p}:${l}`)).map((l) => `${p}쪽 [${l}]`))
     .join(', ');
-  syncFeedback().catch(() => {}); // 12시간에 한 번, 기다리지 않음 (이번 쪽에는 저장된 피드백을 씀)
+  refreshShared().catch(() => {}); // 모두의 피드백: 30분에 한 번 받기, 기다리지 않음 (이번 쪽에는 저장된 피드백을 씀)
   const ctx = {
     bookInfo: info.bookInfo,
     tip: info.tipText + (info.tipImages?.length ? '\n(제작 Tip에 이미지가 있어요. 이미지 내용은 볼 수 없으니 관련 판단이 필요하면 flags에 적으세요.)' : ''),
@@ -1763,6 +1830,7 @@ $('btnLogout').addEventListener('click', lock);
 $('btnDeleteProfile').addEventListener('click', deleteProfile);
 $('monthlyLimit').addEventListener('change', async () => {
   me().monthlyLimit = Math.max(0, Number($('monthlyLimit').value) || 0);
+  if (!me().monthlyLimit) $('monthlyLimit').value = ''; // 0은 한도 없음: 칸을 비워 '한도 없음'이 보이게
   await saveProfiles();
   showTodayCost();
   msg('settingsMsg', me().monthlyLimit ? `이번 달 한도를 $${me().monthlyLimit}로 정했어요.` : '한도를 없앴어요.');
@@ -1794,8 +1862,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
   unlocked = u && profiles.some((p) => p.id === u.pid) ? u : null;
   if (unlocked) { showGate(false); fillForms(); showTodayCost(); } else if (!running) { setSettingsOpen(false); showGate(true); }
 });
-$('model').addEventListener('change', async () => { settings.model = $('model').value; await persist(); msg('settingsMsg', '모델을 바꿨어요.'); });
-$('btnSaveAdvanced').addEventListener('click', saveAdvanced);
+$('model').addEventListener('change', async () => { settings.model = $('model').value; await persist(); showOptionCosts(); msg('settingsMsg', '모델을 바꿨어요.'); });
 
 async function editorBook() {
   const tab = await getEditorTab();
@@ -2188,7 +2255,8 @@ $('btnFeedback').addEventListener('click', async () => {
   b.disabled = true;
   $('feedbackInfo').textContent = '마이픽에서 피드백을 읽는 중…';
   try {
-    const r = await syncFeedback({ manual: true });
+    const r = await syncFeedback();
+    feedbackDone.add(pid());
     paintFeedback(r.fb);
     msg('settingsMsg', r.added ? `새 피드백 ${r.added}건을 가져왔어요. 다음 쪽부터 반영해요.` : '새 피드백이 없어요.');
   } catch (e) {
@@ -2198,7 +2266,11 @@ $('btnFeedback').addEventListener('click', async () => {
 });
 
 chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
-chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });
+chrome.tabs.onUpdated.addListener((id, change, tab) => {
+  if (change.status !== 'complete') return;
+  if (!running) refreshStatus();
+  if (unlocked && /^https:\/\/(www\.)?mypickebook\.org\//.test(tab?.url || '')) autoFeedback(id);
+});
 setInterval(() => { if (!running) refreshStatus(); }, 15000);
 setInterval(() => { if (!running) cleanupBooks(); }, 3600 * 1000);
 
@@ -2210,5 +2282,5 @@ playSplash($('brand')).catch(() => {});
   await restoreUnlock();
   fillForms();
   await cleanupBooks();
-  if (unlocked) { showTodayCost(); refreshStatus(); } else showGate(true);
+  if (unlocked) { showTodayCost(); refreshStatus(); refreshShared({ force: true }).catch(() => {}); } else showGate(true);
 })();

@@ -97,7 +97,7 @@
     <div id="changeKeyBox" class="adv"><div class="adv-in">
       <input type="password" id="newKeyValue" placeholder="새 키 sk-ant-..." autocomplete="off" aria-label="새 API 키">
       <input type="password" id="changeKeyPw" placeholder="지금 비밀번호" autocomplete="current-password" aria-label="지금 비밀번호">
-      <div class="r"><button type="button" id="btnSaveKey" class="pill">저장</button></div>
+      <div class="r"><button type="button" id="btnSaveKey" class="pill">키 바꾸기</button></div>
     </div></div>
 
     <span class="lbl">쓴 비용</span>
@@ -116,7 +116,7 @@
       <input type="password" id="oldPw" placeholder="지금 비밀번호" autocomplete="current-password" aria-label="지금 비밀번호">
       <input type="password" id="newPw" placeholder="새 비밀번호" autocomplete="new-password" aria-label="새 비밀번호">
       <input type="password" id="newPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
-      <div class="r"><button type="button" id="btnSavePw" class="pill">저장</button></div>
+      <div class="r"><button type="button" id="btnSavePw" class="pill">비밀번호 바꾸기</button></div>
     </div></div>
     <div id="settingsMsg" class="note"></div>
 
@@ -134,9 +134,10 @@
       <button type="button" id="btnAdvanced" class="tri" aria-expanded="false">상세 설정<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4h8l-4 5z"/></svg></button>
     </div>
     <div id="advancedBox" class="adv"><div class="adv-in">
-      <label class="opt">2차 검증<input type="checkbox" id="verify" class="tg"></label>
-      <label class="opt">2차 검증 때 원본 전체 다시 보기<input type="checkbox" id="verifyFull" class="tg"></label>
-      <label class="opt">필요한 쪽만 확대 이미지로 다시 보기<input type="checkbox" id="zoom" class="tg"></label>
+      <div class="note cost-total" id="costTotal" aria-live="polite"></div>
+      <label class="opt"><span class="opt-t">2차 검증<span class="hint" id="costVerify"></span></span><input type="checkbox" id="verify" class="tg"></label>
+      <label class="opt"><span class="opt-t">2차 검증 때 원본 전체 다시 보기<span class="hint" id="costFull"></span></span><input type="checkbox" id="verifyFull" class="tg"></label>
+      <label class="opt"><span class="opt-t">필요한 쪽만 확대 이미지로 다시 보기<span class="hint" id="costZoom"></span></span><input type="checkbox" id="zoom" class="tg"></label>
       <label class="opt">시각자료 자동으로 잘라 넣기<input type="checkbox" id="autoVisuals" class="tg"></label>
       <label class="opt">쪽 넘김 간격<input type="checkbox" id="pacing" class="tg"></label>
       <div id="paceBox" class="adv"><div class="adv-in">
@@ -145,7 +146,7 @@
           <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
         </div>
       </div></div>
-      <div class="r"><button type="button" id="btnSaveAdvanced" class="pill">저장</button><span id="advancedMsg" class="note"></span></div>
+      <div class="note" id="advancedMsg" aria-live="polite"></div>
       <div class="r"><button type="button" id="btnDeleteProfile" class="pill sm danger">이 계정 지우기</button></div>
     </div></div>
   </section>

@@ -33,6 +33,9 @@ async function site(req) {
       <button id="editBlankThenGo" onclick="var w=window.open('about:blank', 'make_book_b', 'width=1400,height=900'); w.location.href='/making/make_book.html?idx=23584&book_page=151';">편집하기 (빈 창 → 주소 이동)</button>
       <button id="history" onclick="window.open('/making/history.html?idx=23584', 'hist', 'width=800,height=600')">기록 확인</button>`, 'text/html; charset=utf-8');
   }
+  // 마이페이지 봉사실적(피드백 버튼) · 피드백 팝업: 저장소의 실제 화면 저장본
+  if (url.pathname === '/mypage/book.html') return res(url.searchParams.get('page') > 1 ? '<table><tbody></tbody></table>' : fs.readFileSync(path.join(FIX, 'mypage_book.html'), 'utf8'), 'text/html; charset=utf-8');
+  if (url.pathname === '/mypage/pop_feed.html') { S.feedPops = (S.feedPops || 0) + 1; return res(url.searchParams.get('page') > 1 ? '<table><tbody></tbody></table>' : fs.readFileSync(path.join(FIX, 'pop_feed.html'), 'utf8'), 'text/html; charset=utf-8'); }
   if (url.pathname === '/making/history.html') return res('<!doctype html><meta charset="utf-8"><title>기록</title><h1 id="h">작업 기록</h1>', 'text/html; charset=utf-8');
   if (url.pathname === '/making/make_book.html') {
     const page = Number(url.searchParams.get('book_page') || 151);

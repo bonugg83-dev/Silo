@@ -336,7 +336,8 @@ assert.equal(await panel.inputValue('#paceMinSec'), '60');
 assert.equal(await panel.inputValue('#paceMaxSec'), '90');
 await panel.fill('#paceMinSec', '8');
 await panel.fill('#paceMaxSec', '9');
-await panel.click('#btnSaveAdvanced');
+await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장 (저장 버튼 없음)
+await panel.waitForFunction(() => /저장했어요/.test(document.querySelector('#advancedMsg').textContent));
 assert.match(await panel.textContent('#costToday'), /^\$0\.\d\d$/);
 assert.match(await panel.textContent('#todayCost'), /오늘 2쪽, 쪽당 약/);
 const costKeys = Object.keys(await panel.evaluate(() => chrome.storage.local.get(null))).filter((k) => k.startsWith('cost'));
