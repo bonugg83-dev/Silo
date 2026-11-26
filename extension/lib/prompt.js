@@ -263,6 +263,7 @@ export function buildVerifyMessage(ctx, draftText, diffs, omissions = [], { full
   if (zoomed) t += '이번에는 같은 쪽의 위쪽 절반과 아래쪽 절반을 확대한 이미지 두 장을 함께 보냅니다. 작은 글씨, 각주 번호와 설명, 낫표 획, 불확실한 글자를 확대본으로 다시 확인하세요.\n';
   t += section('draft_text', draftText);
   if (unsure.length) t += section('uncertain_spots', unsure.map((u, i) => `${i + 1}. ${u}`).join('\n'));
+  if (unsure.length) t += 'uncertain_spots는 1차에서 확실하지 않다고 한 곳입니다. 원본(확대본)으로 확인되면 필요한 곳만 fixes로 고치고 flags에는 넣지 마세요(1차 표시는 지워집니다). 확대본으로도 정말 읽을 수 없을 때만 flags에 다시 남기세요.\n';
   const list = diffs.map((d, i) => `${i + 1}. OCR: “${d.ocr || '(없음)'}” / 초안: “${d.result || '(없음)'}”`).join('\n');
   t += section('ocr_vs_draft_differences', list);
   t += section('only_in_ocr', omissions.map((o, i) => `${i + 1}. “${o}”`).join('\n'));

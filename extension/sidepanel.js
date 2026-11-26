@@ -848,6 +848,9 @@ async function analyze() {
   const noteLines = [];
   const skipOmission = ['toc', 'index_ad'].includes(result.page_kind);
   let r2usage = null;
+  // 2차 검증이 다시 보고 판단한 것 (1차의 불확실 표시, OCR에만 있는 구절)
+  const checkedByVerify = new Set();
+  const omissionsSeen = new Set();
 
   stepper.skipStep('verify');
   const omitted0 = skipOmission ? [] : findOmissions(ocrText, checked.text);
@@ -869,6 +872,9 @@ async function analyze() {
       });
       cost += estimateCostUsd(settings.model, r2.usage);
       r2usage = r2.usage;
+      // 2차가 원본(확대본)으로 다시 본 곳은 1차 표시를 떼고, 2차가 여전히 모르겠다고 한 것만 남긴다
+      for (const f of unsure) checkedByVerify.add(f);
+      for (const o of omitted) omissionsSeen.add(o);
       const fx = applyFixes(checked.text, r2.result.fixes, (x) => applyRules(x, { ...ruleOpts, allowBlankLines: true }).text);
       for (const f of fx.failed) {
         extraFlags.push({ kind: 'uncertain_text', needs_review: true, quote: '',
@@ -907,7 +913,8 @@ async function analyze() {
   // 누락 경보 (프로그램 검사)
   if (!skipOmission) {
     // 한 쪽의 누락 의심은 한 줄로 묶는다. 한 문장 이상(20자 이상) 빠졌을 때만 빨강, 짧으면 노랑
-    const om = findOmissions(ocrText, checked.text);
+    // 2차가 이미 보고 "본문이 아님"으로 둔 구절은 빼고, 2차 뒤에 새로 생긴 누락만 본다
+    const om = findOmissions(ocrText, checked.text).filter((o) => !omissionsSeen.has(o));
     if (om.length) {
       const cut = (o) => (o.length > 30 ? `${o.slice(0, 30)}…` : o);
       const big = om.some((o) => o.replace(/\s/g, '').length >= 20);
@@ -950,7 +957,7 @@ async function analyze() {
   current = {
     tabId: tab.id, info, ocrText, result, cost, sentImage: sent,
     text: checked.text, ruleChanges: checked.changes, ruleWarnings: checked.warnings,
-    flags: [...(result.flags || []), ...extraFlags].map(sortFlag).filter(Boolean),
+    flags: [...(result.flags || []).filter((f) => !checkedByVerify.has(f)), ...extraFlags].map(sortFlag).filter(Boolean),
     notes: [result.notes, ...noteLines].filter(Boolean).join('\n'),
     visuals, book, footMissing, footOrphans,
   };
