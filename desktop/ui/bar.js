@@ -1,4 +1,11 @@
 const $ = (id) => document.getElementById(id);
+// 위쪽 막대 로고의 화면 위치: 시작 모션이 이 자리로 들어가 멈추도록 앱 본체에 알려 줌
+const reportBrand = () => {
+  const r = document.querySelector('.bar .brand').getBoundingClientRect();
+  silo.brandRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+};
+reportBrand();
+window.addEventListener('resize', reportBrand);
 for (const id of ['back', 'forward', 'reload', 'home', 'practice', 'togglePanel', 'diagnostics']) $(id).addEventListener('click', () => silo.cmd(id));
 
 function describe(url, title) {

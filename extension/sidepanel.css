@@ -1,10 +1,11 @@
 /* 어두운 테마 (YouTube Music 느낌). 버튼 효과는 0.15초. */
 :root {
+  --brand-ink: #f4f4f2; --brand-dot: #4f9dff;
   /* 회색 6단계 + 글자용 */
   --bg: #0b0b0b; --panel: #121212; --box: #1c1c1c; --btn: #272727; --line: #2c2c2c; --border: #6b6b6b;
   --fg: #f1f1f1; --sub: #cfcfcf; --muted: #9a9a9a; --hint: #8a8a8a; --ring: var(--border);
   /* 위험(빨강) · 강조(파랑) 하나씩 */
-  --danger: #ff8a8a; --danger-solid: #c73a3a; --danger-bg: #3b1b1b; --accent: #4f9dff;
+  --danger: #ff8a8a; --danger-solid: #c73a3a; --danger-bg: #3b1b1b; --accent: var(--brand-dot);
   --err: var(--danger); --err-bg: var(--danger-bg); --warn: #f5c451; --warn-bg: #3a2e12;
   /* 글자 12/13/14/16/20 (+ 로고) · 둥글기 6/10/16/999 · 누르는 높이 32/36 (태블릿 44) */
   --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px;
@@ -283,11 +284,10 @@ input.num.wide { width: 92px; }
   .ring, .halo { animation-duration: 12s; }
   .pop, .stepline span { animation: none; }
 }
-/* Silo 로고: Libre Caslon Text Bold, 흰 글자 + 파란 i 점 */
-@font-face { font-family: "Libre Caslon Text"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/LibreCaslonText-Bold-latin.woff2) format("woff2"); }
-.brand { font-family: "Libre Caslon Text", Georgia, serif; font-size: 23px; font-weight: 700; line-height: 1.15; font-kerning: none; color: #f4f4f2; white-space: nowrap; position: relative; display: inline-block; }
-.brand .g { position: relative; display: inline-block; }
-.brand .brand-dot { position: absolute; left: 0; top: 0; width: auto; height: auto; border-radius: 0; background: none; color: var(--accent); clip-path: inset(0 0 calc(100% - var(--dot-clip, 0px)) 0); }
+/* Silo 로고: extension/brand/silo.svg 와 같은 윤곽선. 크기는 font-size(글자 크기)로 정함 */
+.brand { font-size: 23px; width: 2.005em; height: 1.23em; display: block; flex-shrink: 0; }
+.brand .ink { fill: var(--brand-ink); }
+.brand .dot { fill: var(--brand-dot); }
 body.splashing .brand { visibility: hidden; }
 /* 시작 모션 */
 canvas.splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1000; cursor: pointer; transition: opacity .3s ease; }
@@ -328,7 +328,7 @@ body.auth-open { overflow: hidden; }
 .cost-cell b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .cost-cell .note { margin: 0; }
 .limit { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: -6px; }
-.limit span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .35s var(--ease-out); }
+.limit span { display: block; height: 100%; width: 0; background: var(--brand-dot); border-radius: 999px; transition: width .35s var(--ease-out); }
 .limit.over span { background: var(--err); }
 
 /* 앱 안 확인 창 (브라우저 confirm 대신) */
