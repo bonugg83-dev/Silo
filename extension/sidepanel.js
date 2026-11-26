@@ -13,6 +13,7 @@ import { applyFixes } from './lib/fixes.js';
 import {
   parseVisualBlocks, buildEditorData, existingFigures, cropImage, IMAGE_KINDS,
 } from './lib/visuals.js';
+import { staleBookKeys } from './lib/cleanup.js';
 
 const $ = (id) => document.getElementById(id);
 const TOC_VERSION = 2;
@@ -43,6 +44,8 @@ const DEFAULT_SETTINGS = {
 let settings = { ...DEFAULT_SETTINGS };
 let current = null;
 let autoRunning = false;
+let running = false; // 교정하기가 도는 중 (한 쪽 또는 자동모드)
+let stopReq = false; // 교정 중에 교정하기를 한 번 더 눌러 멈추기를 요청함
 let abort = null;
 // 오늘 쓴 비용 (설정 탭에 합계)
 async function addCost(usd) {
@@ -88,27 +91,27 @@ function renderKeys() {
   const box = $('keyList');
   box.innerHTML = '';
   if (!settings.keys.length) {
-    box.innerHTML = '<p class="small muted">저장된 키가 없어요. 아래에서 추가하세요.</p>';
+    box.innerHTML = '<p class="note">저장된 키가 없어요. 키 추가를 눌러 넣어 주세요.</p>';
   }
   for (const k of settings.keys) {
     const row = document.createElement('div');
     row.className = 'key-row';
+    const label = document.createElement('label');
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'activeKey';
     radio.checked = k.id === settings.activeKeyId;
-    radio.title = '이 키 사용';
     radio.addEventListener('change', async () => { settings.activeKeyId = k.id; await persist(); msg('settingsMsg', `“${k.name}”을 사용해요.`); });
-    const name = document.createElement('input');
-    name.type = 'text';
-    name.value = k.name;
-    name.title = '이름을 바꾸려면 고치고 다른 곳을 누르세요';
-    name.addEventListener('change', async () => { k.name = name.value.trim() || '이름 없음'; await persist(); msg('settingsMsg', '이름을 바꿨어요.'); });
-    const code = document.createElement('code');
-    code.textContent = maskKey(k.key);
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = k.name;
+    name.title = maskKey(k.key);
+    label.append(radio, name);
     const del = document.createElement('button');
-    del.className = 'small-btn';
-    del.textContent = '삭제';
+    del.type = 'button';
+    del.className = 'del';
+    del.textContent = '×';
+    del.setAttribute('aria-label', `${k.name} 삭제`);
     del.addEventListener('click', async () => {
       if (!confirm(`“${k.name}” 키를 삭제할까요?`)) return;
       settings.keys = settings.keys.filter((x) => x.id !== k.id);
@@ -117,9 +120,14 @@ function renderKeys() {
       renderKeys();
       msg('settingsMsg', '키를 삭제했어요.');
     });
-    row.append(radio, name, code, del);
+    row.append(label, del);
     box.appendChild(row);
   }
+}
+function openAddKey(on) {
+  $('addKeyBox').classList.toggle('open', on);
+  $('btnAddKey').classList.toggle('white', on);
+  if (on) setTimeout(() => $('newKeyName').focus(), 50);
 }
 
 async function addKey() {
@@ -133,6 +141,7 @@ async function addKey() {
   $('newKeyName').value = '';
   $('newKeyValue').value = '';
   renderKeys();
+  openAddKey(false);
   msg('settingsMsg', `“${name}”을 저장하고 사용 키로 골랐어요.`);
 }
 
@@ -173,9 +182,121 @@ function setError(text) {
   $('error').classList.toggle('hidden', !text);
   $('error').textContent = text || '';
 }
+/** 교정 중이면 결과 칸 한 줄로, 아니면 작은 알림 줄로 */
+function status(text) {
+  if (stepper.active) stepper.note(text);
+  else setProgress(text);
+}
 function setBusy(busy) {
-  for (const id of ['btnAnalyze', 'btnApply', 'btnReviewed']) $(id).disabled = busy;
-  $('btnAuto').disabled = busy && !autoRunning;
+  for (const id of ['btnAnalyze', 'btnApply', 'btnReviewed', 'btnToggleEdit']) $(id).disabled = busy || (running && id !== 'btnAnalyze');
+  $('btnAuto').disabled = busy || running;
+}
+
+// ---------- 교정 중 한 줄 표시 ----------
+// 실제로 그 일을 시작하면 바뀌는 단계와, AI 답을 기다리는 동안 5초마다 넘어가는 단계가 섞여 있다.
+const STEPS = [
+  ['read', '편집 화면 읽는 중'],
+  ['pageno', 'Page No 확인하는 중'],
+  ['image', '원본 이미지 가져오는 중'],
+  ['enhance', '원본 이미지 개선 중'],
+  ['watermark', '워터마크 걸러내는 중'],
+  ['send', 'AI에게 원본 보내는 중'],
+  ['answer', '답변 받는 중'],
+  ['letters', '글자 하나하나 읽는 중'],
+  ['egg', '구본욱 최고면 개추ㅋ'],
+  ['header', '머리말·쪽 번호 지우는 중'],
+  ['join', '끊긴 단어 붙이는 중'],
+  ['para', '문단 나누는 중'],
+  ['punct', '문장부호 맞추는 중'],
+  ['spell', '맞춤법·띄어쓰기 확인하는 중'],
+  ['foot', '각주 찾는 중'],
+  ['verify', 'OCR과 다른 곳 다시 확인하는 중'],
+  ['check', '오류 검증 중'],
+  ['visual', '시각자료 자르는 중'],
+  ['format', '서식 맞추는 중'],
+  ['insert', '편집기에 넣는 중'],
+];
+const STEP_AT = Object.fromEntries(STEPS.map(([k], i) => [k, i]));
+const TIMED_MS = 5000; // AI 기다리는 동안 한 단계
+const EGG_MS = 800; // 이스터에그는 짧게
+const MIN_MS = 250; // 따라잡을 때 한 단계 최소 표시
+
+function showStepLine(text) {
+  const line = $('stepLine');
+  const span = document.createElement('span');
+  span.textContent = text.endsWith('ㅋ') ? text : `${text}…`;
+  line.replaceChildren(span);
+  $('result').dataset.state = 'busy';
+}
+const stepper = {
+  active: false,
+  start() {
+    Object.assign(this, { active: true, shown: -1, target: -1, at: 0, timed: false, skip: new Set(), text: {}, waiters: [], pending: '' });
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.tick(), 50);
+  },
+  reach(k, text) {
+    if (!this.active) return;
+    if (text) this.text[k] = text;
+    this.skip.delete(k);
+    this.target = Math.max(this.target, STEP_AT[k]);
+    this.tick();
+  },
+  skipStep(k) { if (this.active) this.skip.add(k); },
+  /** 단계 목록에 없는 한 줄 (목차 읽기 등). 표시가 지금 하는 일까지 따라잡은 뒤에 보여 준다 */
+  note(text) { this.pending = text; this.tick(); },
+  tick() {
+    if (!this.active) return;
+    const now = Date.now();
+    if (this.timed && this.shown >= STEP_AT.send && this.shown < STEP_AT.foot && this.target <= this.shown) {
+      const wait = STEPS[this.shown][0] === 'egg' ? EGG_MS : TIMED_MS;
+      if (now - this.at >= wait) this.target = this.shown + 1;
+    }
+    if (this.shown < this.target && (this.shown < 0 || now - this.at >= MIN_MS)) {
+      this.pending = '';
+      let i = this.shown + 1;
+      while (i < this.target && this.skip.has(STEPS[i][0])) i++;
+      this.shown = i;
+      this.at = now;
+      const [k, t] = STEPS[i];
+      showStepLine(this.text[k] || t);
+    } else if (this.pending && this.shown >= this.target && now - this.at >= MIN_MS) {
+      showStepLine(this.pending);
+      this.pending = '';
+      this.at = now;
+    }
+    this.waiters = this.waiters.filter((w) => !w());
+  },
+  /** k 단계까지 보여 준 뒤에 끝난다 */
+  until(k) {
+    this.reach(k);
+    return new Promise((res) => {
+      const chk = () => {
+        if (this.active && !(this.shown >= STEP_AT[k] && Date.now() - this.at >= MIN_MS)) return false;
+        res();
+        return true;
+      };
+      if (!chk()) this.waiters.push(chk);
+    });
+  },
+  stop() {
+    this.active = false;
+    clearInterval(this.timer);
+    for (const w of this.waiters || []) w();
+    this.waiters = [];
+  },
+};
+
+/** 결과 칸 비우기 (교정 전 상태) */
+function resetBox() {
+  current = null;
+  if (editing) setEditMode(false);
+  $('result').dataset.state = 'empty';
+  $('tgOcr').disabled = true;
+}
+/** 교정이 실패하면 전에 보이던 대로 */
+function restoreBox() {
+  $('result').dataset.state = current ? 'done' : 'empty';
 }
 
 const PRACTICE_URL = chrome.runtime.getURL('practice/practice.html');
@@ -223,7 +344,13 @@ async function getBook(bookIdx) {
   return book;
 }
 async function putBook(bookIdx, book) {
+  book.lastOpened = Date.now();
   await chrome.storage.local.set({ [`book:${bookIdx}`]: book });
+}
+/** 2일 동안 열지 않은 책의 기록을 지운다 */
+async function cleanupBooks() {
+  const stale = staleBookKeys(await chrome.storage.local.get(null));
+  if (stale.length) await chrome.storage.local.remove(stale);
 }
 function headingsSoFar(book, currPage) {
   const lines = [];
@@ -242,6 +369,8 @@ async function refreshStatus() {
     const tab = await getEditorTab();
     const info = await runInPage(tab.id, pageRead);
     const book = await getBook(info.bookIdx);
+    // 연 책은 기록이 지워지지 않게 표시 (한 시간에 한 번만 쓴다)
+    if (!running && Date.now() - (book.lastOpened || 0) > 3600 * 1000) await putBook(info.bookIdx, book);
     showTocState(book);
     updateReviewBadge(book);
     lastStatusError = '';
@@ -263,12 +392,12 @@ function showTocState(book) {
 // ---------- 목차 ----------
 async function ensureToc(tab, info, book, signal) {
   if (!settings.useToc || book.toc || book.tocError) return; // 실패했으면 “다시 읽기” 전까지 다시 시도하지 않음
-  setProgress('목차 이미지를 가져오는 중… (책마다 처음 한 번)');
+  status('목차 이미지를 가져오는 중 (책마다 처음 한 번)');
   try {
     const toc = await runInPage(tab.id, pageFetchToc, [info.bookIdx]);
     if (!toc?.ok) throw new Error(toc?.error || '목차 페이지를 열지 못함');
     if (!toc.images?.length) throw new Error('목차 이미지가 없음');
-    setProgress(`Claude가 목차 ${toc.images.length}쪽을 읽고 단계를 정리하는 중…`);
+    status(`목차 ${toc.images.length}쪽을 읽고 단계를 정리하는 중`);
     const imgs = [];
     for (const u of toc.images) imgs.push((await downscaleImage(u, 1800)).dataUrl);
     const rt = await callClaude({
@@ -295,19 +424,21 @@ async function analyze() {
   setError('');
   if (!$('reviewBox').classList.contains('hidden')) await showReview(false);
   const tab = await getEditorTab();
-  if (!activeKey()) throw new Error('API 키가 없어요. 설정 탭에서 Claude API 키를 추가해 주세요.');
+  if (!activeKey()) throw new Error('API 키가 없어요. 설정(☰)에서 Claude API 키를 추가해 주세요.');
   abort = new AbortController();
-  editing = false;
-
-  setProgress('편집 화면을 읽는 중…');
+  if (editing) setEditMode(false);
+  setProgress('');
+  stepper.start();
+  stepper.reach('read');
   const info = await runInPage(tab.id, pageRead);
   if (!info.editorFound) throw new Error('편집기를 찾지 못했어요. 페이지가 다 열렸는지 확인해 주세요.');
   if (!info.imgSrc) throw new Error('원본 이미지(#book_img)를 찾지 못했어요.');
   const ocrText = editorHtmlToText(info.ocrHtml);
 
-  setProgress('원본 이미지를 가져오는 중…');
+  stepper.reach('image');
   const img = await runInPage(tab.id, pageFetchImage, [info.imgSrc]);
   if (!img?.ok) throw new Error('원본 이미지를 가져오지 못했어요: ' + (img?.error || ''));
+  stepper.reach('enhance');
   const sent = await downscaleImage(img.dataUrl, settings.imageMax);
 
   const book = await getBook(info.bookIdx);
@@ -339,8 +470,11 @@ async function analyze() {
   });
 
   let cost = 0;
-  setProgress('Claude가 원본을 보고 작성하는 중… (30초~2분)');
+  stepper.reach('send');
+  stepper.timed = true;
   const r1 = await call({ userText: buildWriteMessage(ctx) });
+  stepper.timed = false;
+  stepper.reach('foot');
   cost += estimateCostUsd(settings.model, r1.usage);
   const result = r1.result;
   const ruleOpts = { dashSpacing: settings.dashSpacing, unitSymbols: settings.unitSymbols, allowBlankLines: !!result.has_poem_or_quote };
@@ -348,10 +482,11 @@ async function analyze() {
   const extraFlags = [];
   let verifyNote = '';
 
+  stepper.skipStep('verify');
   if (settings.verify) {
     const diffs = disagreements(ocrText, checked.text);
     if (diffs.length) {
-      setProgress(`OCR과 다른 ${diffs.length}곳을 원본으로 다시 확인하는 중…`);
+      stepper.reach('verify', `OCR과 다른 ${diffs.length}곳 다시 확인하는 중`);
       const r2 = await call({ userText: buildVerifyMessage(ctx, checked.text, diffs), schema: VERIFY_SCHEMA });
       cost += estimateCostUsd(settings.model, r2.usage);
       const fx = applyFixes(checked.text, r2.result.fixes);
@@ -368,6 +503,7 @@ async function analyze() {
       verifyNote = '2차 검증: OCR과 다른 곳이 없어 건너뜀';
     }
   }
+  stepper.reach('check');
   addCost(cost);
 
   // 다른 쪽에 걸친 각주
@@ -383,6 +519,7 @@ async function analyze() {
   }
 
   // 시각자료
+  stepper.skipStep('visual');
   const visuals = await prepareVisuals(tab, info, checked.text, result.visuals || [], sent);
 
   current = {
@@ -392,8 +529,9 @@ async function analyze() {
     visuals, book, footMissing, footOrphans,
   };
   current.page = decidePageNumber(info, result, book);
+  await stepper.until('format');
+  stepper.stop();
   render();
-  setProgress('');
   return current;
 }
 
@@ -416,7 +554,7 @@ async function prepareVisuals(tab, info, text, aiVisuals, sent) {
     list.push(item);
   }
   if (!settings.autoVisuals) return list;
-  setProgress('시각자료를 자르는 중…');
+  stepper.reach('visual');
   try {
     const o = await runInPage(tab.id, pageFetchOriginal, [info.bookIdx, info.currPage]);
     original = o?.ok ? o.dataUrl : sent.dataUrl;
@@ -474,7 +612,7 @@ function allIssues() {
 
 function render() {
   const c = current;
-  $('result').classList.remove('hidden');
+  $('result').dataset.state = 'done';
   $('pageNum').value = c.page.value;
   $('nonePage').checked = c.page.none;
   $('output').value = c.text;
@@ -492,7 +630,6 @@ function render() {
   }
   renderDiff(c.ocrText, c.text);
   $('tgOcr').disabled = false;
-  $('tgChanges').disabled = false;
   updateLiveWarn();
 }
 
@@ -584,11 +721,27 @@ function visualThumb(i) {
   return span;
 }
 
+/** 버튼 글자를 바꾸며 폭도 부드럽게 (0.15초) */
+function setLabel(btn, text) {
+  if (btn.textContent === text) return;
+  const from = btn.getBoundingClientRect().width;
+  btn.textContent = text;
+  if (!from) return;
+  btn.style.width = 'auto';
+  const to = btn.getBoundingClientRect().width;
+  btn.style.width = `${from}px`;
+  void btn.offsetWidth;
+  btn.style.width = `${to}px`;
+  clearTimeout(btn.labelTimer);
+  btn.labelTimer = setTimeout(() => { btn.style.width = ''; }, 200);
+}
 function setEditMode(on) {
   editing = on;
   $('output').classList.toggle('hidden', !on);
   $('outputView').classList.toggle('hidden', on);
-  $('btnToggleEdit').textContent = on ? '표시 보기' : '직접 고치기';
+  $('result').classList.toggle('editing', on);
+  $('btnToggleEdit').classList.toggle('white', on);
+  setLabel($('btnToggleEdit'), on ? '저장' : '수정하기');
 }
 
 function renderDiff(a, b) {
@@ -807,49 +960,45 @@ function pickPaceSec() {
   return lo + Math.random() * (hi - lo);
 }
 /** 쪽을 연 때부터 targetSec가 지날 때까지 기다린다. 자동 모드를 멈추면 false */
-async function waitPace(openedAt, targetSec, page) {
-  while (autoRunning) {
-    const left = Math.ceil(targetSec - (Date.now() - openedAt) / 1000);
-    if (left <= 0) return true;
-    setProgress(`${page}쪽 끝. 다음 쪽까지 ${left}초`);
-    await new Promise((r) => setTimeout(r, Math.min(1000, left * 1000)));
+async function waitPace(openedAt, targetSec) {
+  const w = $('wait');
+  try {
+    while (autoRunning) {
+      const left = Math.ceil(targetSec - (Date.now() - openedAt) / 1000);
+      if (left <= 0) return true;
+      w.textContent = `${left}s`;
+      w.hidden = false;
+      await new Promise((r) => setTimeout(r, Math.min(1000, left * 1000)));
+    }
+    return false;
+  } finally {
+    w.hidden = true;
   }
-  return false;
 }
 async function autoLoop() {
   autoRunning = true;
-  $('btnAuto').textContent = '멈추기';
-  $('btnAuto').classList.add('danger');
-  try {
-    $('reviewBox').classList.add('hidden');
-    while (autoRunning) {
-      const openedAt = Date.now();
-      const paceSec = pickPaceSec();
-      const st = await refreshStatus();
-      if (!st) throw new Error(lastStatusError || '편집 화면을 찾지 못했어요.');
-      await analyze();
-      if (!autoRunning) break;
-      const stop = needsStop();
-      if (stop) {
-        setProgress(`${current.info.currPage}쪽에서 멈췄어요: ${stop}`);
-        break;
-      }
-      if (!(await waitPace(openedAt, paceSec, current.info.currPage))) break;
-      setProgress(`${current.info.currPage}쪽 저장 후 다음 쪽으로…`);
-      const r = await save('next', { reviewed: false });
-      if (!r.moved) {
-        setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요.`);
-        $('result').classList.add('hidden');
-        await showReview(true);
-        break;
-      }
-      $('result').classList.add('hidden');
+  await showReview(false);
+  while (autoRunning) {
+    const openedAt = Date.now();
+    const paceSec = pickPaceSec();
+    const st = await refreshStatus();
+    if (!st) throw new Error(lastStatusError || '편집 화면을 찾지 못했어요.');
+    await analyze();
+    if (!autoRunning) break; // 멈추기를 눌렀으면 이 쪽 결과를 보여 주고 끝
+    const stop = needsStop();
+    if (stop) {
+      setProgress(`${current.info.currPage}쪽에서 멈췄어요: ${stop}`);
+      break;
     }
-  } finally {
-    autoRunning = false;
-    $('btnAuto').textContent = '자동 모드';
-    $('btnAuto').classList.remove('danger');
-    await refreshStatus();
+    if (!(await waitPace(openedAt, paceSec))) break;
+    showStepLine(STEPS[STEP_AT.insert][1]);
+    const r = await save('next', { reviewed: false });
+    resetBox();
+    if (!r.moved) {
+      setProgress(`마지막 쪽(${r.info.currPage}쪽)까지 저장했어요.`);
+      await showReview(true);
+      break;
+    }
   }
 }
 
@@ -870,38 +1019,70 @@ function guard(fn) {
   };
 }
 
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
-  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${t.dataset.tab}`));
-}));
-
-$('btnAnalyze').addEventListener('click', guard(analyze));
-$('btnApply').addEventListener('click', guard(async () => { await applyToEditor(); setProgress('편집기에 넣었어요.'); }));
-$('btnReviewed').addEventListener('click', guard(markReviewed));
-document.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
-  const panel = $(b.dataset.panel);
-  const on = panel.classList.contains('hidden');
-  panel.classList.toggle('hidden', !on);
-  b.classList.toggle('on', on);
-}));
-$('btnAdvanced').addEventListener('click', () => $('advancedBox').classList.toggle('hidden'));
-$('btnAuto').addEventListener('click', async () => {
-  if (autoRunning) {
-    autoRunning = false;
-    abort?.abort();
-    setProgress('자동 모드를 멈췄어요.');
-    return;
-  }
+const autoOn = () => $('btnAuto').getAttribute('aria-checked') === 'true';
+/** 교정하기: 자동모드가 켜져 있으면 쪽을 넘기며 계속, 꺼져 있으면 이 쪽만 */
+async function startRun() {
+  running = true;
+  stopReq = false;
   setError('');
-  setBusy(true);
+  setProgress('');
+  $('btnAnalyze').classList.add('on');
+  setBusy(false);
   try {
-    await autoLoop();
+    if (autoOn()) await autoLoop();
+    else await analyze();
   } catch (e) {
+    stepper.stop();
+    restoreBox();
     if (e.name !== 'AbortError') setError(e.message || String(e));
   } finally {
+    running = false;
+    autoRunning = false;
+    stopReq = false;
+    $('wait').hidden = true;
+    $('btnAnalyze').classList.remove('on', 'stopping');
     setBusy(false);
+    refreshStatus();
   }
+}
+$('btnAnalyze').addEventListener('click', () => {
+  if (stopReq) return; // 멈추는 중에는 더 눌러도 그대로
+  pop($('btnAnalyze'));
+  if (!running) { startRun(); return; }
+  // 교정 중에 한 번 더 누르면: 하던 쪽까지만 하고 멈춤
+  stopReq = true;
+  autoRunning = false;
+  $('btnAnalyze').classList.add('stopping');
 });
+$('btnAuto').addEventListener('click', () => {
+  if (running || $('btnAuto').disabled) return;
+  $('btnAuto').setAttribute('aria-checked', String(!autoOn()));
+});
+
+// 누르는 느낌 (0.15초)
+function pop(b) {
+  b.classList.remove('pop');
+  void b.offsetWidth;
+  b.classList.add('pop');
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.pill');
+  if (b && b.id !== 'btnAnalyze' && !b.disabled) pop(b);
+});
+document.addEventListener('animationend', (e) => { if (e.animationName === 'press') e.target.classList.remove('pop'); });
+
+// 복붙하기: 흰 물이 차오르며 '복붙성공', 잠깐 뒤 가라앉음
+let copyTimer;
+$('btnApply').addEventListener('click', guard(async () => {
+  await applyToEditor();
+  const b = $('btnApply');
+  clearTimeout(copyTimer);
+  b.classList.add('full');
+  copyTimer = setTimeout(() => b.classList.remove('full'), 350 + 400);
+}));
+$('btnReviewed').addEventListener('click', guard(markReviewed));
+
+// 수정하기 ↔ 저장
 $('btnToggleEdit').addEventListener('click', () => {
   if (!current) return;
   if (editing) {
@@ -909,19 +1090,58 @@ $('btnToggleEdit').addEventListener('click', () => {
     renderOutputView();
   }
   setEditMode(!editing);
+  if (editing) $('output').focus();
 });
 $('output').addEventListener('input', () => { if (current) { current.text = $('output').value; updateLiveWarn(); } });
 
-$('btnAddKey').addEventListener('click', addKey);
+// 보기 칩: 하나만 켜지고, 아래로 늘어나며 펼쳐짐
+function showDrawer(panelId) {
+  const dw = $('dw');
+  const from = dw.getBoundingClientRect().height;
+  clearTimeout(showDrawer.timer);
+  if (panelId) {
+    for (const id of ['tocPanel', 'diffPanel']) $(id).classList.toggle('hidden', id !== panelId);
+    dw.classList.add('open');
+  }
+  const to = panelId ? $(panelId).getBoundingClientRect().height : 0;
+  dw.style.height = `${from}px`;
+  void dw.offsetWidth;
+  dw.style.height = `${to}px`;
+  showDrawer.timer = setTimeout(() => {
+    if (panelId) { dw.style.height = 'auto'; return; }
+    dw.classList.remove('open');
+    for (const id of ['tocPanel', 'diffPanel']) $(id).classList.add('hidden');
+  }, 360);
+}
+document.querySelectorAll('.chips .chip').forEach((c) => c.addEventListener('click', () => {
+  const on = c.getAttribute('aria-pressed') !== 'true';
+  document.querySelectorAll('.chips .chip').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  c.setAttribute('aria-pressed', String(on));
+  showDrawer(on ? c.dataset.panel : null);
+}));
+$('pageNum').addEventListener('input', () => {
+  const v = $('pageNum').value.replace(/\D/g, '').slice(0, 4);
+  if (v !== $('pageNum').value) $('pageNum').value = v;
+});
+
+// 설정: 오른쪽에서 밀려 들어옴
+function setSettingsOpen(on) {
+  document.body.classList.toggle('settings-open', on);
+  $('settings').setAttribute('aria-hidden', String(!on));
+  $('settings').inert = !on;
+  $('work').inert = on;
+}
+$('btnOpenSettings').addEventListener('click', () => setSettingsOpen(true));
+$('btnCloseSettings').addEventListener('click', () => setSettingsOpen(false));
+$('btnAdvanced').addEventListener('click', () => {
+  const on = $('advancedBox').classList.toggle('open');
+  $('btnAdvanced').setAttribute('aria-expanded', String(on));
+});
+$('btnAddKey').addEventListener('click', () => openAddKey(!$('addKeyBox').classList.contains('open')));
+$('btnSaveKey').addEventListener('click', addKey);
 $('newKeyValue').addEventListener('keydown', (e) => { if (e.key === 'Enter') addKey(); });
 $('model').addEventListener('change', async () => { settings.model = $('model').value; await persist(); msg('settingsMsg', '모델을 바꿨어요.'); });
 $('btnSaveAdvanced').addEventListener('click', saveAdvanced);
-$('btnClearBook').addEventListener('click', guard(async () => {
-  const tab = await getEditorTab();
-  const info = await runInPage(tab.id, pageRead);
-  await chrome.storage.local.remove(`book:${info.bookIdx}`);
-  msg('advancedMsg', '이 책의 작업 기록(이전 쪽 내용, 목차)을 지웠어요.');
-}));
 
 async function editorBook() {
   const tab = await getEditorTab();
@@ -995,20 +1215,19 @@ async function renderReview() {
     const row = document.createElement('div');
     row.className = 'rv-link';
     const t = document.createElement('div');
-    t.className = 'small';
     t.textContent = `${link.from}쪽 [${link.label}] ← ${link.to}쪽 맨 위 설명`;
     const note = document.createElement('div');
-    note.className = 'small note';
+    note.className = 'note';
     note.textContent = link.note.length > 120 ? `${link.note.slice(0, 120)}…` : link.note;
     const btn = document.createElement('button');
-    btn.className = 'small-btn';
+    btn.type = 'button';
+    btn.className = 'pill sm';
     btn.textContent = '반영';
     btn.addEventListener('click', guard(async () => { await applyLink(link); await renderReview(); }));
     row.append(t, note, btn);
     if (link.error) {
       const er = document.createElement('div');
-      er.className = 'small';
-      er.style.color = 'var(--err)';
+      er.className = 'err';
       er.textContent = link.error;
       row.append(er);
     }
@@ -1023,7 +1242,6 @@ async function renderReview() {
     const h = document.createElement('h3');
     h.textContent = `${n}쪽${rec.pageNumber ? ` (쪽 번호 ${rec.pageNumber})` : ''}${rec.reviewed ? ' · 확인함' : ''}`;
     const ul = document.createElement('ul');
-    ul.className = 'small';
     for (const it of rec.issues) {
       const li = document.createElement('li');
       li.className = it.cls;
@@ -1031,13 +1249,15 @@ async function renderReview() {
       ul.appendChild(li);
     }
     const row = document.createElement('div');
-    row.className = 'row';
+    row.className = 'r';
     const open = document.createElement('button');
-    open.className = 'small-btn primary';
+    open.type = 'button';
+    open.className = 'pill sm primary';
     open.textContent = '이 쪽 열기';
     open.addEventListener('click', guard(() => openPageForReview(n)));
     const ok = document.createElement('button');
-    ok.className = 'small-btn';
+    ok.type = 'button';
+    ok.className = 'pill sm';
     ok.textContent = rec.reviewed ? '다시 확인할 것으로' : '확인함';
     ok.addEventListener('click', async () => {
       const b = await getBook(info.bookIdx);
@@ -1064,7 +1284,7 @@ async function gotoPage(tab, n) {
 
 /** 저장해 둔 쪽을 다시 열어 패널에 보여 준다 (편집기 내용 기준) */
 async function openPageForReview(n) {
-  if (autoRunning) throw new Error('자동 모드를 멈춘 뒤에 열어 주세요.');
+  if (running) throw new Error('교정이 끝난 뒤에 열어 주세요.');
   const tab = await getEditorTab();
   setProgress(`${n}쪽으로 가는 중…`);
   const info = await gotoPage(tab, n);
@@ -1086,7 +1306,7 @@ async function openPageForReview(n) {
     visuals, book, reviewing: true, footMissing: rec.footMissing, footOrphans: rec.footOrphans,
     page: { value: info.nonePage ? '' : info.pageField, none: info.nonePage, note: '', guessed: false },
   };
-  document.querySelector('.tab[data-tab="work"]').click();
+  setSettingsOpen(false);
   await showReview(false);
   render();
   setProgress(`${n}쪽을 열었어요.`);
@@ -1110,7 +1330,7 @@ async function rewritePage(tab, n, change) {
 }
 
 async function applyLink(link) {
-  if (autoRunning) throw new Error('자동 모드를 멈춘 뒤에 반영해 주세요.');
+  if (running) throw new Error('교정이 끝난 뒤에 반영해 주세요.');
   const tab = await getEditorTab();
   const info0 = await runInPage(tab.id, pageRead);
   const bookIdx = info0.bookIdx;
@@ -1165,7 +1385,8 @@ $('btnApplyAllLinks').addEventListener('click', guard(async () => {
 $('btnReview').addEventListener('click', () => showReview($('reviewBox').classList.contains('hidden')));
 async function showReview(on) {
   $('reviewBox').classList.toggle('hidden', !on);
-  $('btnReview').classList.toggle('on', on);
+  $('workMain').classList.toggle('hidden', on);
+  $('btnReview').setAttribute('aria-pressed', String(on));
   if (on) await renderReview();
 }
 
@@ -1185,7 +1406,7 @@ async function markReviewed() {
   }
   current.reviewing = false;
   $('btnReviewed').classList.add('hidden');
-  $('result').classList.add('hidden');
+  resetBox();
   setProgress(changed ? `${n}쪽 고친 내용을 넣고 임시저장했어요.` : `${n}쪽 확인함.`);
   await showReview(true);
 }
@@ -1201,16 +1422,19 @@ async function openPractice() {
 }
 $('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
 
-chrome.tabs.onActivated.addListener(() => refreshStatus());
-chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !autoRunning) refreshStatus(); });
-setInterval(() => { if (!autoRunning) refreshStatus(); }, 15000);
+chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
+chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'complete' && !running) refreshStatus(); });
+setInterval(() => { if (!running) refreshStatus(); }, 15000);
+setInterval(() => { if (!running) cleanupBooks(); }, 3600 * 1000);
 
 (async () => {
   await loadSettings();
   fillForms();
   showTodayCost();
+  await cleanupBooks();
   if (!activeKey()) {
-    document.querySelector('.tab[data-tab="settings"]').click();
+    setSettingsOpen(true);
+    openAddKey(true);
     msg('settingsMsg', '처음이시면 API 키를 추가해 주세요.');
   }
   refreshStatus();
