@@ -214,6 +214,10 @@ await app.close();
 app = await launch();
 panel = await find(/^silo:\/\/ext\/sidepanel\.html/);
 await panel.waitForLoadState();
+// 데스크톱 앱은 켤 때마다 시작 모션
+await panel.waitForFunction(() => document.querySelector('canvas.splash'), null, { timeout: 5000 });
+await panel.waitForFunction(() => !document.querySelector('canvas.splash') && !document.body.classList.contains('splashing'), null, { timeout: 10000 });
+console.log('✓ 다시 켜도 시작 모션');
 const after = await panel.evaluate(async () => ({ local: await chrome.storage.local.get(null), session: await chrome.storage.session.get(null) }));
 if (accounts) {
   assert.equal(after.local.profiles.length, 1, '계정 유지');
@@ -230,7 +234,7 @@ if (accounts) {
 }
 assert.deepEqual(after.session, {}, 'session 은 비워짐');
 b = await silo((s) => s.bounds());
-assert.ok(Math.abs(b.panel.width - 620) <= 12, '같은 날 다시 켜면 모션 없이 바로 배치 A');
+assert.ok(Math.abs(b.panel.width - 620) <= 12, '다시 켜도 패널 폭 유지');
 if (!accounts) assert.match(await siteCookie(), /login=A/);
 console.log('✓ 다시 켜도 유지 (session 은 비워짐)');
 

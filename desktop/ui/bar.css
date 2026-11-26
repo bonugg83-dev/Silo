@@ -3,7 +3,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
   font: 13px/1.4 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; user-select: none; }
-.bar { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
+.bar { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--line); }
 .brand { font-family: 'Libre Caslon Text', Georgia, serif; font-weight: 700; font-size: 23px; color: #F4F4F2; line-height: 1; display: inline-flex; letter-spacing: .01em; }
 .brand .g { position: relative; }
 .brand .dot { position: absolute; left: 50%; top: .03em; width: .2em; height: .2em; border-radius: 50%; background: var(--blue); transform: translateX(-50%); }
@@ -32,3 +32,17 @@ body.locked .nav, body.locked .right { visibility: hidden; }
 .link:empty { display: none; }
 .toast { position: fixed; right: 12px; top: 8px; height: 32px; padding: 0 14px; border-radius: 999px; background: #f1f1f1; color: #0b0b0b; display: flex; align-items: center; font-weight: 500; }
 .toast[hidden] { display: none; }
+
+/* 열린 창 목록 줄: 마이픽 / 편집 화면 151쪽 / 기록 확인 */
+.strip { height: 38px; display: flex; align-items: flex-end; gap: 4px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--bg); overflow-x: auto; scrollbar-width: none; }
+.strip[hidden] { display: none; }
+.tab { flex-shrink: 0; height: 32px; max-width: 260px; display: flex; align-items: center; border-radius: 10px 10px 0 0; background: #151515; color: var(--muted); border: 1px solid transparent; border-bottom: none; }
+.tab.on { background: #1f1f1f; color: var(--fg); border-color: var(--line); }
+.tab .t { height: 100%; padding: 0 12px; display: flex; align-items: center; gap: 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: inherit; }
+.tab .t span { overflow: hidden; text-overflow: ellipsis; }
+.tab .t::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
+.tab.editor .t::before { background: #3ddc84; }
+.tab.home .t::before { background: var(--blue); }
+.tab .b { width: 26px; height: 26px; margin-right: 3px; border-radius: 6px; display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }
+.tab .b:hover { background: #2c2c2c; color: var(--fg); }
+.tab .b svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }

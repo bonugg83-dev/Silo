@@ -27,7 +27,45 @@ silo.onState((s) => {
   link.classList.toggle('on', eds.length > 0);
   link.textContent = eds.length === 1 ? `편집 화면 연결됨${eds[0] ? ' · ' + eds[0] + '쪽' : ''}`
     : eds.length > 1 ? `편집 화면 ${eds.length}개` : '편집 화면 없음';
+  renderStrip(s);
 });
+// 열린 창 목록 줄
+const ICON = {
+  min: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+function el(tag, cls, attrs = {}) { const e = document.createElement(tag); if (cls) e.className = cls; Object.assign(e, attrs); return e; }
+function renderStrip(s) {
+  const strip = $('strip');
+  const list = s.popups || [];
+  strip.hidden = !list.length || !!s.authOpen;
+  strip.replaceChildren();
+  if (strip.hidden) return;
+  const home = el('div', 'tab home' + (list.some((p) => p.shown) ? '' : ' on'));
+  const hb = el('button', 't', { type: 'button', title: '마이픽 화면' });
+  hb.append(el('span', '', { textContent: '마이픽' }));
+  hb.addEventListener('click', () => silo.cmd('showSite'));
+  home.append(hb);
+  strip.append(home);
+  for (const p of list) {
+    const tab = el('div', 'tab' + (p.shown ? ' on' : '') + (/^편집 화면/.test(p.title) ? ' editor' : ''));
+    const t = el('button', 't', { type: 'button', title: p.title });
+    t.append(el('span', '', { textContent: p.title }));
+    t.addEventListener('click', () => silo.cmd('showPopup', p.id));
+    tab.append(t);
+    if (p.shown) {
+      const min = el('button', 'b', { type: 'button', innerHTML: ICON.min, title: '내리기 (마이픽 화면 보기)' });
+      min.setAttribute('aria-label', p.title + ' 내리기');
+      min.addEventListener('click', () => silo.cmd('showSite'));
+      tab.append(min);
+    }
+    const x = el('button', 'b', { type: 'button', innerHTML: ICON.close, title: '닫기' });
+    x.setAttribute('aria-label', p.title + ' 닫기');
+    x.addEventListener('click', () => silo.cmd('closePopup', p.id));
+    tab.append(x);
+    strip.append(tab);
+  }
+}
 let toastTimer;
 silo.onToast((text) => {
   const t = $('toast');

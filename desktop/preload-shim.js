@@ -80,6 +80,8 @@ ipcRenderer.send('shim:hello');
 // (확장 lib/splash.js 와 같은 기준: localStorage "silo-splash-day", 움직임 줄이기 설정).
 if (location.pathname === '/sidepanel.html') {
   let expectSplash = false;
+  // 데스크톱 앱은 켤 때마다 시작 모션을 보여 준다 (확장은 하루 한 번): 앱을 켠 뒤 패널이 처음 뜰 때 "오늘 봄" 기록을 지움
+  try { if (ipcRenderer.sendSync('splash:first')) localStorage.removeItem('silo-splash-day'); } catch {}
   try {
     expectSplash = localStorage.getItem('silo-splash-day') !== new Date().toLocaleDateString('sv')
       && !matchMedia('(prefers-reduced-motion: reduce)').matches;
