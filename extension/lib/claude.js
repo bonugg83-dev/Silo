@@ -3,9 +3,9 @@
 import { SYSTEM_PROMPT, RESULT_SCHEMA } from './prompt.js';
 
 export const MODELS = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 권장)', inPrice: 4, outPrice: 20 },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 저렴)', inPrice: 2, outPrice: 10 },
-  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 (가장 정확, 비쌈)', inPrice: 8, outPrice: 40 },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 권장)', inPrice: 4, outPrice: 20, cacheRead: 0.2 },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 저렴)', inPrice: 2, outPrice: 10, cacheRead: 0.1 },
+  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 (가장 정확, 비쌈)', inPrice: 8, outPrice: 40, cacheRead: 0.2 },
 ];
 
 export class ClaudeError extends Error {
@@ -22,11 +22,16 @@ function parseDataUrl(dataUrl) {
   return { media_type: m[1], data: m[2] };
 }
 
-/** 페이지 이미지 + 지시문으로 구조화된 결과를 받는다. */
+/**
+ * 페이지 이미지 + 지시문으로 구조화된 결과를 받는다.
+ * prior({user, assistant})를 주면 앞 대화에 이어서 묻는다 (앞 대화는 캐시로 싸게 다시 읽힘).
+ * cacheUser면 이번 질문까지를 캐시해 다음 이어 묻기에 쓰게 한다.
+ * 돌려주는 turn({user, assistant})을 다음 호출의 prior로 넘긴다.
+ */
 export async function callClaude(params) {
   const { apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true,
-    schema = RESULT_SCHEMA, system = SYSTEM_PROMPT } = params;
-  const images = params.images || [imageDataUrl];
+    schema = RESULT_SCHEMA, system = SYSTEM_PROMPT, bookBlock = '', prior = null, cacheUser = false } = params;
+  const images = params.images || (imageDataUrl ? [imageDataUrl] : []);
   if (!apiKey) throw new ClaudeError('설정에서 Claude API 키를 넣어 주세요.');
   const body = {
     model,
@@ -36,18 +41,24 @@ export async function callClaude(params) {
       effort,
       format: { type: 'json_schema', schema },
     },
-    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-    messages: [{
-      role: 'user',
-      content: [
-        ...images.map((u) => {
-          const img = parseDataUrl(u);
-          return { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } };
-        }),
-        { type: 'text', text: userText },
-      ],
-    }],
+    system: [
+      { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
+      // 책마다 같은 부분도 따로 캐시 (같은 책 다음 쪽부터 싸게)
+      ...(bookBlock ? [{ type: 'text', text: bookBlock, cache_control: { type: 'ephemeral' } }] : []),
+    ],
+    messages: [],
   };
+  const userContent = [
+    ...images.map((u) => {
+      const img = parseDataUrl(u);
+      return { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } };
+    }),
+    { type: 'text', text: userText, ...(cacheUser ? { cache_control: { type: 'ephemeral' } } : {}) },
+  ];
+  if (prior) {
+    body.messages.push({ role: 'user', content: prior.user }, { role: 'assistant', content: prior.assistant });
+  }
+  body.messages.push({ role: 'user', content: userContent });
   const headers = {
     'content-type': 'application/json',
     'x-api-key': apiKey,
@@ -96,12 +107,13 @@ export async function callClaude(params) {
   } catch {
     throw new ClaudeError('응답 형식을 읽지 못했어요. 다시 시도해 주세요.', { retryable: true });
   }
-  return { result, usage: json.usage || {}, model: json.model || model };
+  return { result, usage: json.usage || {}, model: json.model || model, turn: { user: userContent, assistant: json.content || [] } };
 }
 
 /** usage로 대략적인 비용(달러)을 계산한다. */
 export function estimateCostUsd(modelId, usage) {
   const m = MODELS.find((x) => x.id === modelId) || MODELS[0];
-  const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) * 1.25 + (usage.cache_read_input_tokens || 0) * 0.1;
-  return (inTok * m.inPrice + (usage.output_tokens || 0) * m.outPrice) / 1e6;
+  const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) * 1.25;
+  return (inTok * m.inPrice + (usage.cache_read_input_tokens || 0) * (m.cacheRead ?? m.inPrice * 0.1)
+    + (usage.output_tokens || 0) * m.outPrice) / 1e6;
 }

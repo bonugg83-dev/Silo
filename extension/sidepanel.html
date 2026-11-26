@@ -11,7 +11,6 @@
     <div class="hd">
       <span class="brand" id="brand" role="img" aria-label="Silo">S<span class="g">ı<span class="brand-dot" aria-hidden="true">i</span></span>lo</span>
       <span class="hd-r">
-        <button type="button" id="btnReview" class="chip hidden" aria-pressed="false">검수 <span id="reviewBadge" class="badge"></span></button>
         <button type="button" id="btnOpenSettings" class="icon" aria-label="설정"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button>
       </span>
     </div>
@@ -28,18 +27,6 @@
     <div id="tocAlert" class="alert hidden">목차를 읽지 못했어요. <button type="button" id="btnTocRetry" class="link">다시 읽기</button></div>
     <div id="error" class="alert error hidden"></div>
     <div id="progress" class="note hidden"></div>
-
-    <!-- 검수 목록 (머리의 검수 버튼으로) -->
-    <div id="reviewBox" class="hidden">
-      <div id="reviewSummary" class="note"></div>
-      <div id="reviewLinksBox" class="card hidden">
-        <h3>다른 쪽에 걸친 각주</h3>
-        <div id="reviewLinks"></div>
-        <div class="r"><button type="button" id="btnApplyAllLinks" class="pill sm">모두 반영</button></div>
-      </div>
-      <div id="reviewPages"></div>
-      <div class="r"><button type="button" id="btnReviewShowAll" class="pill sm">확인한 쪽도 보기</button></div>
-    </div>
 
     <div id="workMain" class="stack">
       <!-- 결과 칸 -->
@@ -83,6 +70,9 @@
           <ul id="changes" class="note"></ul>
         </div>
       </div>
+
+      <!-- 교정이 끝나면 나타나는 긴 검수 버튼 -->
+      <button type="button" id="btnReview" class="review-bar hidden">검수 <span id="reviewBadge" class="badge hidden"></span></button>
     </div>
   </section>
 
@@ -112,6 +102,8 @@
     </div>
     <div id="advancedBox" class="adv"><div class="adv-in">
       <label class="opt">2차 검증<input type="checkbox" id="verify" class="tg"></label>
+      <label class="opt">2차 검증 때 원본 전체 다시 보기<input type="checkbox" id="verifyFull" class="tg"></label>
+      <label class="opt">확대 이미지 함께 보내기<input type="checkbox" id="zoom" class="tg"></label>
       <label class="opt">시각자료 자동으로 잘라 넣기<input type="checkbox" id="autoVisuals" class="tg"></label>
       <label class="opt">줄표(―) 앞뒤
         <select id="dashSpacing" class="sm">
@@ -126,6 +118,29 @@
       </div>
       <div class="r"><button type="button" id="btnSaveAdvanced" class="pill">저장</button><span id="advancedMsg" class="note"></span></div>
     </div></div>
+  </section>
+
+  <!-- 검수: 아래에서 올라옴 -->
+  <section id="sheet" class="sheet scroll" aria-hidden="true" aria-label="검수" inert>
+    <div class="r sb sheet-hd">
+      <button type="button" id="btnSheetBack" class="pill">돌아가기</button>
+      <div class="sort-wrap">
+        <button type="button" id="btnSort" class="pill sm" aria-expanded="false" aria-controls="sortMenu">정렬 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4h8l-4 5z"/></svg></button>
+        <div id="sortMenu" class="sort-menu">
+          <div class="seg" role="group" aria-label="정렬 순서">
+            <button type="button" data-order="asc" aria-pressed="true">오름차순</button>
+            <button type="button" data-order="desc" aria-pressed="false">내림차순</button>
+          </div>
+          <button type="button" id="btnShowAll" class="switch" role="switch" aria-checked="false">확인한 쪽도 보기<span class="track"></span></button>
+        </div>
+      </div>
+    </div>
+    <div id="reviewLinksBox" class="card hidden">
+      <h3>다른 쪽에 걸친 각주</h3>
+      <div id="reviewLinks"></div>
+      <div class="r"><button type="button" id="btnApplyAllLinks" class="pill sm">모두 반영</button></div>
+    </div>
+    <div id="reviewPages" class="rv-list"></div>
   </section>
 
   <!-- 시각자료 영역 고치기 -->
