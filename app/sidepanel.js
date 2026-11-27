@@ -2217,12 +2217,23 @@ async function linkFootnotes(bookIdx) {
   }
   if (!pending.length) return '';
   let ok = 0;
-  for (const [i, link] of pending.entries()) {
-    showStepLine(`쪽을 넘는 각주 잇는 중 (${i + 1}/${pending.length})`);
-    try { await applyLink(link, { inRun: true }); ok++; } catch { /* 검수 창에 남김 */ }
-  }
+  const why = [];
+  appMoving = true; // 각주를 잇느라 앱이 쪽을 옮김 (사용자가 옮긴 것으로 보고 끝 안내를 덮어쓰지 않게)
+  try {
+    for (const [i, link] of pending.entries()) {
+      showStepLine(`쪽을 넘는 각주 잇는 중 (${i + 1}/${pending.length})`);
+      try { await applyLink(link, { inRun: true }); ok++; } catch (e) { why.push(`${link.from}쪽 [${link.label}]: ${e.message}`); } // 검수 창에도 남김
+    }
+    // 지금 편집 화면의 쪽을 "본 쪽"으로 기억 (끝난 뒤 상태 확인이 이 쪽 결과를 띄우며 끝 안내를 지우지 않게)
+    try {
+      const tab = await getEditorTab();
+      const info = await runInPage(tab.id, pageRead);
+      followEditorPage.seen = `${info.bookIdx}:${info.currPage}`;
+    } catch { /* 편집 화면이 닫혔으면 그만 */ }
+  } finally { appMoving = false; }
   $('result').dataset.state = 'empty';
-  return ok === pending.length ? ` 쪽을 넘는 각주 ${ok}개도 이었어요.` : ` 각주 ${pending.length - ok}개는 잇지 못했어요(검수에서 반영).`;
+  return ok === pending.length ? ` 쪽을 넘는 각주 ${ok}개도 이었어요.`
+    : ` 각주 ${pending.length - ok}개는 잇지 못했어요(검수에서 반영). ${why.join(' / ')}`;
 }
 
 async function applyLink(link, { inRun = false } = {}) {

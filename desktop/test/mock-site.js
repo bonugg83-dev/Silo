@@ -11,7 +11,13 @@ const S = (globalThis.__mock = { saves: [], uploads: [], apiCalls: [] });
 // SILO_MOCK_FOOTNOTES=1: Gemini처럼 쪽을 넘는 각주 — 152쪽엔 번호만 [각주***], 153쪽 맨 위엔 새 번호로 [각주*: 설명],
 // 모델은 footnotes_without_note·notes_without_marker 를 비워 둠
 const GEMINI_FOOTNOTES = !!process.env.SILO_MOCK_FOOTNOTES;
+// 테스트 화면용: SILO_MOCK_FOOTNOTES=3,4 처럼 쪽을 주면 그 두 쪽에서 (번호가 같은 [각주***])
+const [FN_A, FN_B] = /^\d+,\d+$/.test(process.env.SILO_MOCK_FOOTNOTES || '') ? process.env.SILO_MOCK_FOOTNOTES.split(',').map(Number) : [];
 function resultFor(page) {
+  const base = { page_number: String(page), page_kind: 'body', is_blank_page: false, has_poem_or_quote: false, visuals: [], flags: [], notes: '', footnotes_without_note: [], notes_without_marker: [] };
+  if (FN_A && page === FN_A) return { ...base, text: `본문 ${page} ‘스메타나’[각주***]에 대한 대사`, footnotes_without_note: [{ label: '각주***' }] };
+  if (FN_A && page === FN_B) return { ...base, text: `[각주***: 이러한 설정은 연출적 장치로 해석할 수 있다.]\n본문 ${page}`, notes_without_marker: [{ label: '각주***', note: '이러한 설정은 연출적 장치로 해석할 수 있다.' }] };
+  if (FN_A) return { ...base, text: `본문 ${page}` };
   if (GEMINI_FOOTNOTES && page === 152) {
     return { text: '@@{152쪽 제목\n본문 152 ‘스메타나’[각주***]에 대한 대사', page_number: '152', page_kind: 'body', is_blank_page: false,
       has_poem_or_quote: false, visuals: [], flags: [], notes: '', footnotes_without_note: [], notes_without_marker: [] };
