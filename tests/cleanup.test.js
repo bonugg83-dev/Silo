@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { staleBookKeys, lastUsed, BOOK_MAX_AGE_MS } from '../extension/lib/cleanup.js';
+import { staleBookKeys, lastUsed, BOOK_MAX_AGE_MS } from '../app/lib/cleanup.js';
 
 const now = Date.UTC(2026, 10, 25);
 const H = 3600 * 1000;

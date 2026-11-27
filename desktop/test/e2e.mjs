@@ -45,7 +45,7 @@ const home = await find(/mypickebook\.org\/$/);
 
 // 사이트에는 평범한 크롬처럼 보이고, chrome.* 흉내가 들어가지 않음
 assert.doesNotMatch(await home.evaluate(() => navigator.userAgent), /Electron|silo/i);
-assert.equal(await home.evaluate(() => typeof window.chrome?.storage), 'undefined');
+assert.equal(await home.evaluate(() => typeof window.siloPlatform), 'undefined', '사이트에는 플랫폼 창구가 들어가지 않음');
 assert.equal(await home.evaluate(() => typeof window.siloDesktop), 'undefined');
 
 // 시작 모션: 처음 켜면 창 전체(위쪽 막대도 숨김)에서 재생되고, 끝나면 배치 A
@@ -62,7 +62,7 @@ await sleep(300);
 console.log('✓ 시작 모션 창 전체');
 // 1. 키 넣기: 계정 기능이 있는 확장이면 회원가입, 없으면 설정에 키 추가
 const KEY = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
-const accounts = fs.existsSync(path.join(process.env.SILO_EXT || path.join(root, '..', 'extension'), 'lib', 'profiles.js'));
+const accounts = fs.existsSync(path.join(process.env.SILO_APP || path.join(root, '..', 'app'), 'lib', 'profiles.js'));
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
   if (await panel.isVisible('#toSignup')) await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김: 그 전에 다른 칸을 채우면 글자가 이름 칸으로 감
@@ -107,7 +107,7 @@ assert.equal((await mock()).apiCalls[0].key, KEY);
   const m0 = await mock();
   assert.equal(m0.tocCalls, 1, '목차 정리 호출 한 번');
   assert.equal(m0.tocImages, 2, '목차 이미지 2쪽');
-  const toc = await panel.evaluate(async () => Object.entries(await chrome.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => v.toc || v.tocError));
+  const toc = await panel.evaluate(async () => Object.entries(await siloPlatform.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => v.toc || v.tocError));
   assert.ok(toc.some((t) => /@@\[1부 시작/.test(t)), '목차 저장됨: ' + toc);
   assert.equal(await panel.textContent('#tocStatus'), '');
 }
@@ -189,9 +189,9 @@ console.log('✓ 로그인 화면 동안 사이트 숨김');
 // 7. storage.session 과 onChanged
 const sess = await panel.evaluate(async () => {
   const seen = [];
-  chrome.storage.onChanged.addListener((c, area) => seen.push(area + ':' + Object.keys(c).join()));
-  await chrome.storage.session.set({ unlock: { pid: 'p1', key: 'k' } });
-  const got = await chrome.storage.session.get('unlock');
+  siloPlatform.storage.onChanged.addListener((c, area) => seen.push(area + ':' + Object.keys(c).join()));
+  await siloPlatform.storage.session.set({ unlock: { pid: 'p1', key: 'k' } });
+  const got = await siloPlatform.storage.session.get('unlock');
   await new Promise((r) => setTimeout(r, 100));
   return { got, seen };
 });
@@ -201,7 +201,7 @@ console.log('✓ storage.session');
 
 // 8. 프로필(activeProfileId)마다 사이트 로그인 따로 (계정 기능이 있으면 e2e-accounts.mjs 가 실제 가입·로그인으로 시험)
 if (!accounts) {
-const setProfile = (id) => panel.evaluate((v) => (v ? chrome.storage.local.set({ activeProfileId: v }) : chrome.storage.local.remove('activeProfileId')), id);
+const setProfile = (id) => panel.evaluate((v) => (v ? siloPlatform.storage.local.set({ activeProfileId: v }) : siloPlatform.storage.local.remove('activeProfileId')), id);
 const siteCookie = async () => {
   await sleep(400);
   const page = await find(/mypickebook\.org\/$/);
@@ -230,7 +230,7 @@ await panel.waitForLoadState();
 await panel.waitForFunction(() => document.querySelector('canvas.splash'), null, { timeout: 5000 });
 await panel.waitForFunction(() => !document.querySelector('canvas.splash') && !document.body.classList.contains('splashing'), null, { timeout: 10000 });
 console.log('✓ 다시 켜도 시작 모션');
-const after = await panel.evaluate(async () => ({ local: await chrome.storage.local.get(null), session: await chrome.storage.session.get(null) }));
+const after = await panel.evaluate(async () => ({ local: await siloPlatform.storage.local.get(null), session: await siloPlatform.storage.session.get(null) }));
 if (accounts) {
   assert.equal(after.local.profiles.length, 1, '계정 유지');
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'), null, { timeout: 5000 });

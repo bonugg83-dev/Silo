@@ -31,8 +31,8 @@ async function find(re, timeout = 15000) {
 const mock = () => app.evaluate(() => ({ feedPops: globalThis.__mock.feedPops || 0 }));
 const panel = await find(/sidepanel\.html/);
 const record = () => panel.evaluate(async () => {
-  const { activeProfileId: id } = await chrome.storage.local.get('activeProfileId');
-  return (await chrome.storage.local.get(`feedback:${id}`))[`feedback:${id}`] || null;
+  const { activeProfileId: id } = await siloPlatform.storage.local.get('activeProfileId');
+  return (await siloPlatform.storage.local.get(`feedback:${id}`))[`feedback:${id}`] || null;
 });
 async function until(f, why, timeout = 20000) {
   for (let t = 0; t < timeout; t += 200) { if (await f()) return; await sleep(200); }

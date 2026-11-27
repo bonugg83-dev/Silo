@@ -1,3 +1,4 @@
+import platform from './lib/platform.js';
 import { applyRules } from './lib/rules.js';
 import { diffWords, disagreements } from './lib/diff.js';
 import {
@@ -95,19 +96,19 @@ function ask({ title, body = '', ok = '확인', danger = false }) {
   });
 }
 // ---------- 교정자 프로필 (lib/profiles.js) ----------
-let profiles = []; // chrome.storage.local "profiles"
-let unlocked = null; // {pid, key, lastUsed} (chrome.storage.session "unlock")
+let profiles = []; // platform.storage.local "profiles"
+let unlocked = null; // {pid, key, lastUsed} (platform.storage.session "unlock")
 let runPid = ''; // 교정이 도는 동안 고정한 프로필과 키
 let runKey = '';
 const PANEL_ID = crypto.randomUUID();
 
 const pid = () => runPid || unlocked?.pid || '';
 const me = () => profiles.find((p) => p.id === pid());
-// 온라인 계정 (lib/cloud.js). 로그인 세션은 chrome.storage.session "cloud" 에 (브라우저를 닫으면 사라짐)
+// 온라인 계정 (lib/cloud.js). 로그인 세션은 platform.storage.session "cloud" 에 (브라우저를 닫으면 사라짐)
 const cloud = createCloud();
 let cloudSes = null; // {pid, uid, idToken, refreshToken, exp}
 const online = () => (cloudSes && cloudSes.pid === pid() ? cloudSes : null);
-async function keepSession() { if (cloudSes) await chrome.storage.session.set({ cloud: cloudSes }); }
+async function keepSession() { if (cloudSes) await platform.storage.session.set({ cloud: cloudSes }); }
 /** 온라인 저장: 인터넷이 안 되면 조용히 넘어감 (다음에 다시 올림) */
 async function quietly(f) {
   const s = online();
@@ -115,7 +116,7 @@ async function quietly(f) {
   try { await f(s); await keepSession(); return true; } catch (e) { console.warn('온라인 저장 실패', e); return false; }
 }
 async function saveProfiles() {
-  await chrome.storage.local.set({ profiles });
+  await platform.storage.local.set({ profiles });
   const p = me();
   if (p?.uid) quietly((s) => cloud.saveProfile(s, p));
 }
@@ -128,15 +129,15 @@ function paintAvatar(el, p) {
 }
 async function setLockState(on) {
   const st = on ? { activeProfileId: unlocked.pid, lockState: { pid: unlocked.pid, unlocked: true, at: Date.now() } }
-    : { lockState: { pid: (await chrome.storage.local.get('activeProfileId')).activeProfileId || '', unlocked: false, at: Date.now() } };
-  await chrome.storage.local.set(st);
+    : { lockState: { pid: (await platform.storage.local.get('activeProfileId')).activeProfileId || '', unlocked: false, at: Date.now() } };
+  await platform.storage.local.set(st);
 }
 async function openProfile(p, apiKey, ses = null) {
   unlocked = { pid: p.id, key: apiKey, lastUsed: Date.now() };
   cloudSes = ses ? { ...ses, pid: p.id } : null;
-  await chrome.storage.session.set({ unlock: unlocked, cloud: cloudSes });
+  await platform.storage.session.set({ unlock: unlocked, cloud: cloudSes });
   await setLockState(true);
-  await chrome.storage.local.set({ lastLoginId: p.name });
+  await platform.storage.local.set({ lastLoginId: p.name });
   showGate(false);
   fillForms();
   showTodayCost();
@@ -145,7 +146,7 @@ async function openProfile(p, apiKey, ses = null) {
   refreshShared({ force: true }).catch(() => {});
   loginCheckAt = 0;
   (async () => { // 이미 열린 마이픽 창이 있으면 로그인 확인
-    const [t] = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
+    const [t] = (await platform.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
     if (t) autoFeedback(t.id);
   })().catch(() => {});
 }
@@ -153,7 +154,7 @@ async function lock() {
   if (running) { msg('settingsMsg', '교정이 끝난 뒤 로그아웃할 수 있어요.'); return; }
   unlocked = null;
   cloudSes = null;
-  await chrome.storage.session.remove(['unlock', 'cloud']);
+  await platform.storage.session.remove(['unlock', 'cloud']);
   await setLockState(false);
   setSettingsOpen(false);
   resetBox();
@@ -163,14 +164,14 @@ let lastTouch = 0;
 function touch() {
   if (!unlocked || Date.now() - lastTouch < 20000) return;
   lastTouch = unlocked.lastUsed = Date.now();
-  chrome.storage.session.set({ unlock: unlocked });
+  platform.storage.session.set({ unlock: unlocked });
 }
 async function restoreUnlock() {
-  const r = await chrome.storage.session.get(['unlock', 'cloud']);
+  const r = await platform.storage.session.get(['unlock', 'cloud']);
   const u = r.unlock;
   const p = profiles.find((x) => x.id === u?.pid);
   if (u && p && !lockExpired(u, p)) { unlocked = u; cloudSes = r.cloud?.pid === u.pid ? r.cloud : null; }
-  else if (u) await chrome.storage.session.remove(['unlock', 'cloud']);
+  else if (u) await platform.storage.session.remove(['unlock', 'cloud']);
 }
 
 // 로그인 · 회원가입 화면 (로그인해야 앱을 쓸 수 있음)
@@ -190,7 +191,7 @@ function showGate(on) {
   if (!on) return;
   $('loginPw').value = '';
   $('forgotBox').classList.remove('open');
-  chrome.storage.local.get('lastLoginId').then((r) => { if (!$('loginId').value) $('loginId').value = r.lastLoginId || ''; });
+  platform.storage.local.get('lastLoginId').then((r) => { if (!$('loginId').value) $('loginId').value = r.lastLoginId || ''; });
   $('loginTitle').textContent = profiles.length ? '다시 오셨네요' : 'Silo에 로그인';
   gateStep('login');
 }
@@ -206,9 +207,9 @@ function prepSignup() {
 const NEED_NET = '인터넷 연결이 필요해요. 연결한 뒤 다시 해 주세요.';
 /** 처음 계정일 때: 계정이 없던 때의 책·비용 기록을 이 계정 것으로 */
 async function adoptLegacy(p) {
-  const plan = legacyMigration(await chrome.storage.local.get(null), p.id);
-  if (Object.keys(plan.set).length) await chrome.storage.local.set(plan.set);
-  if (plan.remove.length) await chrome.storage.local.remove(plan.remove);
+  const plan = legacyMigration(await platform.storage.local.get(null), p.id);
+  if (Object.keys(plan.set).length) await platform.storage.local.set(plan.set);
+  if (plan.remove.length) await platform.storage.local.remove(plan.remove);
 }
 async function signup() {
   const name = $('newName').value.trim();
@@ -234,11 +235,11 @@ async function signup() {
   }
   p.id = p.uid = ses.uid;
   profiles.push(p);
-  await chrome.storage.local.set({ profiles });
+  await platform.storage.local.set({ profiles });
   if (first) { await adoptLegacy(p); await uploadLocalCosts(p, ses); }
   if (legacy) {
     settings.keys = settings.keys.filter((k) => k.id !== legacy.id);
-    await chrome.storage.local.set({ settings });
+    await platform.storage.local.set({ settings });
   }
   for (const id of ['newName', 'newPw1', 'newPw1b', 'newKey', 'newCode']) $(id).value = '';
   await openProfile(p, apiKey, ses);
@@ -278,11 +279,11 @@ async function login() {
   if (!k) { $('gateMsg').textContent = 'API 키를 풀지 못했어요. 다시 가입해 주세요.'; return; }
   const first = !profiles.length;
   const p = mergeCloudProfile(local, r.profile, r.session.uid);
-  await chrome.storage.local.set({ profiles });
+  await platform.storage.local.set({ profiles });
   if (first) await adoptLegacy(p);
   if (r.settings) {
     settings = { ...settings, ...r.settings, keys: settings.keys };
-    await chrome.storage.local.set({ settings });
+    await platform.storage.local.set({ settings });
   }
   await openProfile(p, k, r.session);
 }
@@ -306,7 +307,7 @@ async function moveOnline(p, pw) {
     return;
   }
   p.uid = ses.uid; // 책·비용 기록 키는 예전 id 그대로
-  await chrome.storage.local.set({ profiles });
+  await platform.storage.local.set({ profiles });
   $('loginCode').value = '';
   $('loginCodeFld').classList.add('hidden');
   await uploadLocalCosts(p, ses);
@@ -314,7 +315,7 @@ async function moveOnline(p, pw) {
 }
 /** 이 컴퓨터에만 쌓인 비용 기록을 서버로 (온라인으로 옮길 때 한 번) */
 async function uploadLocalCosts(p, ses) {
-  const all = await chrome.storage.local.get(null);
+  const all = await platform.storage.local.get(null);
   const re = new RegExp(`^(cost|costpages):${p.id}:(\\d{4}-\\d{2}-\\d{2})$`);
   const days = {};
   for (const [key, v] of Object.entries(all)) {
@@ -326,14 +327,14 @@ async function uploadLocalCosts(p, ses) {
   } catch (e) {
     // 못 올린 건 다음에 다시
     const list = Object.entries(days).map(([day, c]) => ({ ...c, day }));
-    await chrome.storage.local.set({ [pendKey(p.id)]: list });
+    await platform.storage.local.set({ [pendKey(p.id)]: list });
   }
 }
 
 // ---------- 비용 (프로필별) ----------
 async function monthUsd(id = pid()) {
   const k = costMonthKey(id);
-  return (await chrome.storage.local.get(k))[k] || 0;
+  return (await platform.storage.local.get(k))[k] || 0;
 }
 let costChain = Promise.resolve();
 async function addCost(usd) {
@@ -343,8 +344,8 @@ async function addCost(usd) {
   // 읽고-더하고-쓰기를 한 번에 하나씩 (목차 비용과 쪽 비용이 겹쳐도 빠지지 않게)
   let r;
   const job = costChain.then(async () => {
-    r = await chrome.storage.local.get([k, mk]);
-    await chrome.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
+    r = await platform.storage.local.get([k, mk]);
+    await platform.storage.local.set({ [k]: (r[k] || 0) + usd, [mk]: (r[mk] || 0) + usd });
   });
   costChain = job.catch(() => {});
   await job;
@@ -359,9 +360,9 @@ async function addCost(usd) {
 /** 쪽 하나 교정이 끝날 때: 쪽당 평균과 토큰 기록 (비용 비교용, 최근 300쪽) */
 async function logPage(entry) {
   const day = costPagesKey(pid());
-  const r = await chrome.storage.local.get([day, 'usageLog']);
+  const r = await platform.storage.local.get([day, 'usageLog']);
   const log = [...(r.usageLog || []), { at: Date.now(), pid: pid(), ...entry }].slice(-300);
-  await chrome.storage.local.set({ [day]: (r[day] || 0) + 1, usageLog: log });
+  await platform.storage.local.set({ [day]: (r[day] || 0) + 1, usageLog: log });
   pushCost({ pages: 1 });
   showTodayCost();
 }
@@ -375,8 +376,8 @@ function pushCost(c) {
   const k = pendKey(id);
   const entry = { ...c, day: today() };
   const job = pendChain.then(async () => {
-    const list = [...((await chrome.storage.local.get(k))[k] || []), entry];
-    await chrome.storage.local.set({ [k]: list });
+    const list = [...((await platform.storage.local.get(k))[k] || []), entry];
+    await platform.storage.local.set({ [k]: list });
   });
   pendChain = job.catch(() => {});
   return job.then(() => flushCost());
@@ -387,7 +388,7 @@ async function flushCost() {
   if (flushing || !online()) return;
   flushing = true;
   try {
-    const list = (await chrome.storage.local.get(k))[k] || [];
+    const list = (await platform.storage.local.get(k))[k] || [];
     let done = 0;
     for (const c of list) {
       if (!(await quietly((s) => cloud.addCost(s, c)))) break;
@@ -396,8 +397,8 @@ async function flushCost() {
     // 주의: 서버에는 더해졌는데 응답만 못 받으면 다음에 다시 보내 두 번 더해질 수 있다 (드묾. 막으려면 서버 구조를 바꿔야 함)
     if (done) {
       await (pendChain = pendChain.then(async () => {
-        const now = (await chrome.storage.local.get(k))[k] || [];
-        await chrome.storage.local.set({ [k]: now.slice(done) });
+        const now = (await platform.storage.local.get(k))[k] || [];
+        await platform.storage.local.set({ [k]: now.slice(done) });
       }).catch(() => {}));
     }
   } finally { flushing = false; }
@@ -406,18 +407,18 @@ async function flushCost() {
 async function syncCost() {
   const id = pid();
   await flushCost();
-  if ((((await chrome.storage.local.get(pendKey(id)))[pendKey(id)]) || []).length) return; // 못 올린 게 남으면 덮어쓰지 않음
+  if ((((await platform.storage.local.get(pendKey(id)))[pendKey(id)]) || []).length) return; // 못 올린 게 남으면 덮어쓰지 않음
   let m;
   if (!(await quietly(async (s) => { m = await cloud.monthCost(s, thisMonth()); }))) return;
   if (!m.usd) return; // 이번 달에 아직 쓴 게 없음
   const dd = today().slice(8, 10);
-  await chrome.storage.local.set({ [costMonthKey(id)]: m.usd, [costKey(id)]: m.days[dd]?.usd || 0, [costPagesKey(id)]: m.days[dd]?.pages || 0 });
+  await platform.storage.local.set({ [costMonthKey(id)]: m.usd, [costKey(id)]: m.days[dd]?.usd || 0, [costPagesKey(id)]: m.days[dd]?.pages || 0 });
   showTodayCost();
 }
 const won = (usd) => `약 ${Math.round(usd * 1450).toLocaleString()}원`;
 async function showTodayCost() {
   if (!pid()) return;
-  const r = await chrome.storage.local.get([costKey(pid()), costPagesKey(pid()), costMonthKey(pid())]);
+  const r = await platform.storage.local.get([costKey(pid()), costPagesKey(pid()), costMonthKey(pid())]);
   const usd = r[costKey(pid())] || 0;
   const pages = r[costPagesKey(pid())] || 0;
   const month = r[costMonthKey(pid())] || 0;
@@ -435,7 +436,7 @@ let editing = false;
 
 // ---------- 설정 ----------
 async function loadSettings() {
-  const s = await chrome.storage.local.get(['settings', 'profiles']);
+  const s = await platform.storage.local.get(['settings', 'profiles']);
   const raw = s.settings || {};
   profiles = s.profiles || [];
   settings = { ...DEFAULT_SETTINGS, ...raw };
@@ -450,10 +451,10 @@ async function loadSettings() {
   Object.assign(settings, { effort: 'high', useToc: true, imageMax: 2000, unitSymbols: true, runThrough: true, timeWarnMin: 0, dashSpacing: 'attach' });
   // 2026-11-26: 2차 검증 때 원본 전체 다시 보기는 기본 꺼짐으로 (예전에 저장된 켜짐도 한 번 끔)
   if ((raw.settingsRev || 0) < 2) { settings.verifyFull = false; settings.zoom = true; settings.settingsRev = 2; }
-  await chrome.storage.local.set({ settings });
+  await platform.storage.local.set({ settings });
 }
 async function persist() {
-  await chrome.storage.local.set({ settings });
+  await platform.storage.local.set({ settings });
   if (me()?.uid) quietly((s) => cloud.saveSettings(s, settings));
 }
 function activeKey() {
@@ -487,7 +488,7 @@ async function changeKey() {
   p.mask = maskKey(apiKey);
   await saveProfiles();
   unlocked.key = apiKey;
-  await chrome.storage.session.set({ unlock: unlocked });
+  await platform.storage.session.set({ unlock: unlocked });
   $('newKeyValue').value = '';
   $('changeKeyPw').value = '';
   toggleBox('changeKeyBox', 'btnChangeKey', false);
@@ -526,8 +527,8 @@ async function deleteProfile() {
   if (p.uid) {
     try { await cloud.deleteAccount(online()); } catch (e) { msg('settingsMsg', e instanceof OfflineError ? NEED_NET : e.message); return; }
   }
-  await chrome.storage.local.remove(pendKey(p.id));
-  await chrome.storage.local.remove(profileDataKeys(await chrome.storage.local.get(null), p.id));
+  await platform.storage.local.remove(pendKey(p.id));
+  await platform.storage.local.remove(profileDataKeys(await platform.storage.local.get(null), p.id));
   profiles = profiles.filter((x) => x.id !== p.id);
   await saveProfiles();
   await lock();
@@ -565,7 +566,7 @@ async function saveAdvanced({ typing = false } = {}) {
 /** 상세 설정 옵션 옆에 한 쪽에 더 드는 비용, 맨 위에 지금 설정의 쪽당 합계 */
 async function showOptionCosts() {
   let log = [];
-  try { log = (await chrome.storage.local.get('usageLog')).usageLog || []; } catch {}
+  try { log = (await platform.storage.local.get('usageLog')).usageLog || []; } catch {}
   const c = optionCosts(settings.model, settings, log);
   const tag = (m) => (m ? ' · 실제 기록' : '');
   $('costVerify').textContent = `켜면 한 쪽에 ${costLabel(c.verify)}${tag(c.measured.verify)}`;
@@ -707,28 +708,28 @@ function restoreBox() {
   $('result').dataset.state = current ? 'done' : 'empty';
 }
 
-const PRACTICE_URL = chrome.runtime.getURL('practice/practice.html');
+const PRACTICE_URL = platform.runtime.getURL('practice/practice.html');
 const isPracticeUrl = (u) => String(u || '').startsWith(PRACTICE_URL);
 
 async function getEditorTab() {
   const isEditor = (t) => /mypickebook\.org\/making\/make_book\.html/.test(t?.url || '') || isPracticeUrl(t?.url);
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await platform.tabs.query({ active: true, currentWindow: true });
   if (isEditor(tab)) return tab;
-  const all = (await chrome.tabs.query({})).filter(isEditor);
+  const all = (await platform.tabs.query({})).filter(isEditor);
   if (all.length === 1) return all[0];
   throw new Error(all.length > 1
     ? '편집 화면이 여러 개 열려 있어요. 작업할 편집 화면 탭을 선택한 상태에서 눌러 주세요.'
     : `마이픽 편집 화면(make_book.html)을 열고 눌러 주세요. 시험해 보려면 “${LABEL.practice}”를 눌러 주세요.`);
 }
 // ---------- 관리자 피드백 ----------
-// chrome.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
+// platform.storage.local "feedback:<계정 id>" (Silo 계정마다 따로): {list: [{idx,title,page,type,text,date}], counts: {idx: 건수}, at, pushed: [키], shared: [{text,type,count}], sharedAt}
 // 내 피드백: 마이픽 로그인을 확인한 때(마이페이지를 실제로 읽을 수 있을 때) 지난 기록과 비교해 새 것만 가져와 모두의 목록에 올림
 // 모두의 피드백: 마이픽과 상관없이 Silo 로그인할 때, 그리고 교정 시작 때 30분이 지났으면 서버에서 받음
 const SHARED_EVERY_MS = 30 * 60 * 1000;
 const LOGIN_RETRY_MS = 60 * 1000; // 마이픽에 아직 로그인 전이면 다음 쪽이 열릴 때 다시 확인 (1분에 한 번까지)
 const feedbackKey = () => `feedback:${pid()}`;
 async function loadFeedback() {
-  const { [feedbackKey()]: feedback } = await chrome.storage.local.get(feedbackKey());
+  const { [feedbackKey()]: feedback } = await platform.storage.local.get(feedbackKey());
   return { list: [], counts: {}, at: 0, pushed: [], shared: [], sharedAt: 0, ...(feedback || {}) };
 }
 let feedbackBusy = null;
@@ -737,11 +738,11 @@ function syncFeedback({ tabId = null } = {}) {
   if (feedbackBusy) return feedbackBusy;
   feedbackBusy = (async () => {
     const fb = await loadFeedback();
-    const tabs = (await chrome.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
-    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabs = (await platform.tabs.query({})).filter((x) => /^https:\/\/(www\.)?mypickebook\.org\//.test(x.url || ''));
+    const [active] = await platform.tabs.query({ active: true, currentWindow: true });
     const tab = tabs.find((x) => x.id === tabId) || tabs.find((x) => x.id === active?.id) || tabs[0];
     if (!tab) throw new Error('마이픽 사이트 창이 열려 있어야 피드백을 가져올 수 있어요.');
-    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: pageFetchMyFeedback, args: [fb.counts] });
+    const [r] = await platform.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: pageFetchMyFeedback, args: [fb.counts] });
     const got = r?.result;
     if (!got) throw new Error('피드백 화면을 읽지 못했어요.');
     const titles = Object.fromEntries(got.lists.flatMap(parseBookList).map((b) => [b.idx, b]));
@@ -759,7 +760,7 @@ function syncFeedback({ tabId = null } = {}) {
       await cloud.saveFeedbackPushed(s, [...next.pushed, ...toPush.map(key)]);
     })) next.pushed = [...next.pushed, ...toPush.map(key)];
     await quietly(async (s) => { next.shared = await cloud.listFeedback(s); next.sharedAt = Date.now(); });
-    await chrome.storage.local.set({ [feedbackKey()]: next });
+    await platform.storage.local.set({ [feedbackKey()]: next });
     paintFeedback(next);
     return { fb: next, added: added.length };
   })().finally(() => { feedbackBusy = null; });
@@ -778,7 +779,7 @@ async function refreshShared({ force = false } = {}) {
   const now = await loadFeedback(); // 그사이 바뀐 내 기록은 살림
   if (pid() !== id || feedbackBusy) return; // (읽는 사이 가져오기가 시작되면 덮어쓰지 않음)
   const next = { ...now, shared, sharedAt: Date.now() };
-  await chrome.storage.local.set({ [feedbackKey()]: next });
+  await platform.storage.local.set({ [feedbackKey()]: next });
   paintFeedback(next);
 }
 // 마이픽 로그인 확인 → 새 피드백 자동으로 가져오기 (이 실행에서 Silo 계정마다 한 번)
@@ -808,15 +809,15 @@ function paintFeedback(fb) {
 }
 
 async function runInPage(tabId, func, args = []) {
-  const tab = await chrome.tabs.get(tabId);
+  const tab = await platform.tabs.get(tabId);
   if (isPracticeUrl(tab.url)) {
     // 연습 페이지는 확장 프로그램 안의 페이지라 같은 함수를 그 페이지가 직접 실행한다
-    const r = await chrome.runtime.sendMessage({ practiceCall: true, tabId, fn: func.name, args });
+    const r = await platform.runtime.sendMessage({ practiceCall: true, tabId, fn: func.name, args });
     if (!r) throw new Error('테스트 화면이 아직 준비되지 않았어요.');
     if (!r.ok) throw new Error(r.error);
     return r.result;
   }
-  const [r] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
+  const [r] = await platform.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
   return r?.result;
 }
 function fmtTime(sec) {
@@ -829,7 +830,7 @@ function fmtTime(sec) {
 // ---------- 책별 기록 ----------
 async function getBook(bookIdx) {
   const key = bookKey(pid(), bookIdx);
-  const s = await chrome.storage.local.get(key);
+  const s = await platform.storage.local.get(key);
   const book = s[key] || { pages: {}, toc: null };
   // 첫 버전이 저장한 엉뚱한 목차(단계 표시 없음)는 버린다
   if (book.toc && (book.tocVersion !== TOC_VERSION || !/@@/.test(book.toc))) {
@@ -840,12 +841,12 @@ async function getBook(bookIdx) {
 }
 async function putBook(bookIdx, book) {
   book.lastOpened = Date.now();
-  await chrome.storage.local.set({ [bookKey(pid(), bookIdx)]: book });
+  await platform.storage.local.set({ [bookKey(pid(), bookIdx)]: book });
 }
 /** 2일 동안 열지 않은 책의 기록을 지운다 */
 async function cleanupBooks() {
-  const stale = staleBookKeys(await chrome.storage.local.get(null));
-  if (stale.length) await chrome.storage.local.remove(stale);
+  const stale = staleBookKeys(await platform.storage.local.get(null));
+  if (stale.length) await platform.storage.local.remove(stale);
 }
 function headingsSoFar(book, currPage) {
   const lines = [];
@@ -1538,15 +1539,15 @@ async function applyToEditor({ reviewed = true } = {}) {
 
 function waitForPageLoad(tabId, expectedPage, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); reject(new Error('다음 쪽이 열리지 않았어요.')); }, timeoutMs);
+    const timer = setTimeout(() => { platform.tabs.onUpdated.removeListener(listener); reject(new Error('다음 쪽이 열리지 않았어요.')); }, timeoutMs);
     function listener(id, change, tab) {
       if (id !== tabId || change.status !== 'complete') return;
       if (expectedPage && !new RegExp(`book_page=${expectedPage}(\\D|$)`).test(tab.url || '')) return;
       clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(listener);
+      platform.tabs.onUpdated.removeListener(listener);
       resolve();
     }
-    chrome.tabs.onUpdated.addListener(listener);
+    platform.tabs.onUpdated.addListener(listener);
   });
 }
 async function waitForEditor(tabId, expectedPage) {
@@ -1685,12 +1686,12 @@ async function startRun() {
   if (!unlocked) { showGate(true); return; }
   // 교정이 도는 동안은 계정과 키를 고정 (중간에 다른 계정으로 바뀌어도 이 책은 이 키로)
   const lockKey = runLockKey(unlocked.pid);
-  const other = (await chrome.storage.session.get(lockKey))[lockKey];
+  const other = (await platform.storage.session.get(lockKey))[lockKey];
   if (runLockedByOther(other, PANEL_ID)) { setError('다른 창에서 이 계정으로 교정하고 있어요. 그 창의 교정이 끝난 뒤 눌러 주세요.'); return; }
   if (overLimit(me(), await monthUsd())) { setError(`이번 달 한도($${me().monthlyLimit})를 다 썼어요. 설정에서 한도를 바꿀 수 있어요.`); return; }
   runPid = unlocked.pid;
   runKey = unlocked.key;
-  const beat = () => chrome.storage.session.set({ [lockKey]: { owner: PANEL_ID, at: Date.now() } });
+  const beat = () => platform.storage.session.set({ [lockKey]: { owner: PANEL_ID, at: Date.now() } });
   await beat();
   const beatTimer = setInterval(() => { beat(); touch(); }, 20000);
   running = true;
@@ -1710,8 +1711,8 @@ async function startRun() {
     if (e.name !== 'AbortError') setError(e.message || String(e));
   } finally {
     clearInterval(beatTimer);
-    chrome.storage.session.remove(lockKey);
-    if (unlocked) { unlocked.lastUsed = Date.now(); chrome.storage.session.set({ unlock: unlocked }); }
+    platform.storage.session.remove(lockKey);
+    if (unlocked) { unlocked.lastUsed = Date.now(); platform.storage.session.set({ unlock: unlocked }); }
     runPid = '';
     runKey = '';
     running = false;
@@ -1853,7 +1854,7 @@ setInterval(() => {
   if (unlocked && !running && lockExpired(unlocked, me())) lock();
 }, 30000);
 // 다른 창에서 로그아웃·로그인하면 이 창도 따라감 (교정 중인 창은 끝날 때까지 그대로)
-chrome.storage.onChanged.addListener((ch, area) => {
+platform.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch.profiles) profiles = ch.profiles.newValue || [];
   if (area === 'session' && ch.cloud) cloudSes = ch.cloud.newValue || null;
   if (area !== 'session' || !ch.unlock) return;
@@ -2241,12 +2242,12 @@ async function markReviewed() {
 }
 
 async function openPractice() {
-  const existing = (await chrome.tabs.query({})).find((t) => isPracticeUrl(t.url));
+  const existing = (await platform.tabs.query({})).find((t) => isPracticeUrl(t.url));
   if (existing) {
-    await chrome.tabs.update(existing.id, { active: true });
-    await chrome.windows.update(existing.windowId, { focused: true });
+    await platform.tabs.update(existing.id, { active: true });
+    await platform.windows.update(existing.windowId, { focused: true });
   } else {
-    await chrome.tabs.create({ url: `${PRACTICE_URL}?idx=0&book_page=1` });
+    await platform.tabs.create({ url: `${PRACTICE_URL}?idx=0&book_page=1` });
   }
 }
 $('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
@@ -2265,8 +2266,8 @@ $('btnFeedback').addEventListener('click', async () => {
   } finally { b.disabled = false; }
 });
 
-chrome.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
-chrome.tabs.onUpdated.addListener((id, change, tab) => {
+platform.tabs.onActivated.addListener(() => { if (!running) refreshStatus(); });
+platform.tabs.onUpdated.addListener((id, change, tab) => {
   if (change.status !== 'complete') return;
   if (!running) refreshStatus();
   if (unlocked && /^https:\/\/(www\.)?mypickebook\.org\//.test(tab?.url || '')) autoFeedback(id);

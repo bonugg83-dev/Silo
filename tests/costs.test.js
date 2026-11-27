@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { optionCosts, costLabel, priceOf, TOKENS } from '../extension/lib/costs.js';
+import { optionCosts, costLabel, priceOf, TOKENS } from '../app/lib/costs.js';
 
 const near = (a, b, eps = 0.005) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 

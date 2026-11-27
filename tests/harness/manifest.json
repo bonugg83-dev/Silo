@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Silo",
-  "version": "0.14.4",
-  "description": "마이픽 전자도서 제작 화면에서 원본 이미지를 보고 Claude가 쪽 텍스트를 교정해 주는 교정 도우미입니다.",
+  "version": "0.0.0",
+  "description": "테스트 전용: Silo 앱(app/)을 크롬에 올려 브라우저 테스트를 돌리기 위한 매니페스트 (배포하지 않음)",
   "permissions": [
     "sidePanel",
     "storage",
@@ -21,19 +21,10 @@
     "https://firestore.googleapis.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "harness-sw.js"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
-  },
-  "action": {
-    "default_title": "Silo 열기",
-    "default_icon": {
-      "16": "icon16.png",
-      "32": "icon32.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
   },
   "icons": {
     "16": "icon16.png",

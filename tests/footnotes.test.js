@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findLinks, putNoteAtMarker, removeNoteLine } from '../extension/lib/footnotes.js';
+import { findLinks, putNoteAtMarker, removeNoteLine } from '../app/lib/footnotes.js';
 
 test('다른 쪽 각주: 앞쪽 번호와 다음 쪽 설명을 짝지음', () => {
   const book = { pages: { 10: { footMissing: ['각주3'] }, 11: {} } };

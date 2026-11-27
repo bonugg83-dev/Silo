@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseBookList, parseFeedPopup, mergeFeedback, feedbackDigest, cellText } from '../extension/lib/feedback.js';
-import { createCloud } from '../extension/lib/cloud.js';
-import { buildBookBlock } from '../extension/lib/prompt.js';
+import { parseBookList, parseFeedPopup, mergeFeedback, feedbackDigest, cellText } from '../app/lib/feedback.js';
+import { createCloud } from '../app/lib/cloud.js';
+import { buildBookBlock } from '../app/lib/prompt.js';
 import { fakeFirebase } from './fake-firebase.mjs';
 
 const fx = (n) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');

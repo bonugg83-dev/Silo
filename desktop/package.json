@@ -1,8 +1,8 @@
 {
   "name": "silo-desktop",
   "productName": "Silo",
-  "version": "0.3.4",
-  "description": "Silo 데스크톱 앱: 확장(../extension)을 그대로 Electron 창 안에서 실행",
+  "version": "0.3.5",
+  "description": "Silo 데스크톱 앱: 앱 코드(../app)를 Electron 창 안에서 실행",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -36,8 +36,12 @@
     ],
     "extraResources": [
       {
-        "from": "../extension",
-        "to": "extension"
+        "from": "../app",
+        "to": "silo-app",
+        "filter": [
+          "**/*",
+          "!practice/samples/**"
+        ]
       }
     ],
     "win": {

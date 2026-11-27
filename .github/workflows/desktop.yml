@@ -7,7 +7,7 @@ name: 데스크톱 앱 빌드
 on:
   workflow_dispatch:
   push:
-    paths: ['desktop/**', 'extension/**', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'app/**', '.github/workflows/desktop.yml']
 
 permissions:
   contents: write # Releases에 올리기
