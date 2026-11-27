@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { callClaude, ClaudeError, MODELS, estimateCostUsd } from '../app/lib/claude.js';
-import { isGemini, isGeminiKey, usageFromGemini } from '../app/lib/gemini.js';
+import { isGemini, isGeminiKey, usageFromGemini, verifyGeminiKey } from '../app/lib/gemini.js';
 import { RESULT_SCHEMA, VERIFY_SCHEMA } from '../app/lib/prompt.js';
 
 const KEY = 'AIzaSyTESTKEY_abcdefghijklmnopqrstuvwx';
@@ -23,7 +23,10 @@ test('모델·키 알아보기', () => {
   assert.ok(isGemini('gemini-3.1-pro-preview'));
   assert.ok(!isGemini('claude-opus-5-5'));
   assert.ok(isGeminiKey(KEY));
-  assert.ok(!isGeminiKey('sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx'));
+  assert.ok(isGeminiKey('AQ.Ab8RN6Kz_newStyleKey-1234567890abcdef'), '앞글자가 AIza가 아닌 새 모양 키도 받음');
+  assert.ok(!isGeminiKey('sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx'), 'Claude 키는 아님');
+  assert.ok(!isGeminiKey('짧은키'));
+  assert.ok(!isGeminiKey('abc def ghi jkl mno pqr stu'), '띄어쓰기 섞인 것은 아님');
   assert.ok(MODELS.some((m) => m.id === 'gemini-3.1-pro-preview' && m.provider === 'gemini'));
 });
 
@@ -75,4 +78,15 @@ test('연결이 잠깐 끊겨도 다시 시도', async () => {
 
 test('사용량 바꾸기: 빈 값도 0', () => {
   assert.deepEqual(usageFromGemini(), { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 });
+});
+
+test('키 확인: 구글이 받으면 ok, 거절하면 그 이유, 연결이 안 되면 offline', async () => {
+  let hdr;
+  assert.deepEqual(await withFetch(async (u, init) => { hdr = init.headers['x-goog-api-key']; return new Response('{"models":[]}', { status: 200 }); }, () => verifyGeminiKey(KEY)), { ok: true });
+  assert.equal(hdr, KEY);
+  const bad = await withFetch(async () => new Response(JSON.stringify({ error: { message: 'API key not valid' } }), { status: 400 }), () => verifyGeminiKey(KEY));
+  assert.equal(bad.ok, false);
+  assert.match(bad.reason, /not valid/);
+  const off = await withFetch(async () => { throw new TypeError('Failed to fetch'); }, () => verifyGeminiKey(KEY));
+  assert.equal(off.offline, true);
 });

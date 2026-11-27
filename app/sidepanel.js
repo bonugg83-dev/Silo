@@ -22,7 +22,7 @@ import {
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
 import { optionCosts, costLabel } from './lib/costs.js';
-import { isGemini, isGeminiKey } from './lib/gemini.js';
+import { isGemini, isGeminiKey, verifyGeminiKey } from './lib/gemini.js';
 import { playSplash } from './lib/splash.js';
 import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
@@ -511,9 +511,16 @@ async function changeKey() {
 async function setGeminiKey() {
   const p = me();
   const gk = $('newGKey').value.trim();
-  if (!isGeminiKey(gk)) { msg('settingsMsg', 'Gemini 키 형식이 아니에요. AIza 로 시작하는 키를 붙여 넣어 주세요.'); return; }
+  if (!isGeminiKey(gk)) {
+    msg('settingsMsg', /^sk-ant-/.test(gk) ? '이건 Claude 키예요. 구글 AI Studio에서 받은 Gemini 키를 넣어 주세요.' : 'Gemini 키를 띄어쓰기 없이 통째로 붙여 넣어 주세요.');
+    return;
+  }
   const pw = $('gKeyPw').value;
   if (!(await decryptKey(p.enc, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  // 키가 진짜 되는지 구글에 물어봄 (비용 없음). 인터넷이 안 되면 일단 저장
+  msg('settingsMsg', 'Gemini 키를 확인하는 중…');
+  const v = await verifyGeminiKey(gk);
+  if (!v.ok && !v.offline) { msg('settingsMsg', `구글이 이 키를 받지 않아요: ${v.reason}`); return; }
   p.genc = await encryptKey(gk, pw);
   p.gmask = maskKey(gk);
   await saveProfiles();

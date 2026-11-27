@@ -68,7 +68,7 @@ Silo는 **로그인해야 쓸 수 있어요.** 계정은 온라인(구글 Fireba
 
 ### Gemini (구글)로 교정하기
 
-설정 → 내 계정의 **Gemini** 줄에서 **키 넣기**를 누르고, [Google AI Studio](https://aistudio.google.com/apikey)에서 받은 키(AIza…)와 지금 비밀번호를 넣습니다. Claude 키처럼 로그인 비밀번호로 잠가 저장합니다. 그다음 **AI 모델**에서 **Gemini 3.1 Pro**를 고르면 교정·2차 검증·목차 읽기를 모두 Gemini로 합니다.
+설정 → 내 계정의 **Gemini** 줄에서 **키 넣기**를 누르고, [Google AI Studio](https://aistudio.google.com/apikey)에서 받은 키와 지금 비밀번호를 넣습니다(넣을 때 구글에 키가 되는지 확인합니다). Claude 키처럼 로그인 비밀번호로 잠가 저장합니다. 그다음 **AI 모델**에서 **Gemini 3.1 Pro**를 고르면 교정·2차 검증·목차 읽기를 모두 Gemini로 합니다.
 
 - 테스트 묶음 5쪽 시험에서 일부러 넣은 OCR 오류 45군데를 모두 잡았고, 2차 검증까지 한 쪽에 약 $0.09로 Opus 5.5(약 $0.18)의 절반 정도였습니다.
 - 아직 미리보기(preview) 모델이라 이름·가격이 바뀔 수 있습니다. 구글이 책 글을 그대로 옮기는 답을 막는 경우(RECITATION)가 드물게 있으면, 다시 시도하거나 그 쪽만 Claude로 교정합니다.
