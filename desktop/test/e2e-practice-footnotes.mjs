@@ -80,11 +80,41 @@ console.log('끝 안내:', JSON.stringify(progress), '오류:', JSON.stringify(e
 const saved = (await panel.evaluate(() => siloPlatform.storage.local.get('practice:saved')))['practice:saved'] || {};
 const links = await panel.evaluate(async () => Object.entries(await siloPlatform.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => v.links));
 console.log('연결:', JSON.stringify(links));
+const issues = await panel.evaluate(async () => Object.entries(await siloPlatform.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => ({ 3: v.pages[3]?.issues, 4: v.pages[4]?.issues })));
+// 옮긴 뒤에는 검수 목록에서 "이어 붙임 / 앞쪽으로 옮김" 항목이 사라짐
+for (const [p, list] of Object.entries(issues[0])) {
+  assert.ok(!(list || []).some((x) => /각주\*\*\*/.test(x.text)), `${p}쪽 검수 항목에 각주가 남음: ${JSON.stringify(list)}`);
+}
 console.log('3쪽:', JSON.stringify(saved['3']?.content), '\n4쪽:', JSON.stringify(saved['4']?.content));
 assert.deepEqual(errors, []);
 assert.match(progress, /쪽을 넘는 각주 1개도 이었어요/);
 assert.match(saved['3']?.content || '', /\[각주\*\*\*: 이러한 설정은 연출적 장치로 해석할 수 있다\.\]에 대한/);
 assert.ok(!/\[각주\*\*\*:/.test(saved['4']?.content || ''), '4쪽 맨 위 설명 줄 지움');
 console.log('✓ 테스트 화면: 자동 모드 끝에 각주를 앞쪽으로 옮김');
+
+// 같은 쪽들을 한 번 더 교정(묶음 다시 가져오기 → 자동 모드): 지난번에 이은 기록이 있어도 다시 이어야 함
+await pv.close().catch(() => {});
+pv = await find(/practice\/practice\.html/).catch(() => null);
+if (!pv) { await bar.click('#practice'); pv = await find(/practice\/practice\.html/); }
+pv.on('dialog', (d) => d.accept());
+await pv.waitForLoadState();
+await pv.setInputFiles('#packFile', packFile);
+await pv.click('#btnImportPack');
+await pv.waitForFunction(() => /5쪽을 가져왔어요/.test(document.querySelector('#packMsg')?.textContent || ''));
+await pv.waitForFunction(() => document.querySelector('#curr_page')?.value === '1');
+await panel.click('#btnAnalyze');
+await panel.waitForSelector('#askDlg[open]', { timeout: 20000 }).then(() => panel.click('#askOk')).catch(() => {});
+for (let t = 0; t < 240; t += 3) {
+  const st = await panel.evaluate(() => [document.querySelector('#progress').textContent, document.querySelector('#error').textContent, document.querySelector('#btnAnalyze').className]);
+  if (st[0].includes('마지막 쪽') || st[1] || (t > 6 && !/\bon\b/.test(st[2]))) break;
+  await sleep(3000);
+}
+const progress2 = await panel.textContent('#progress');
+const saved2 = (await panel.evaluate(() => siloPlatform.storage.local.get('practice:saved')))['practice:saved'] || {};
+console.log('두 번째 끝 안내:', JSON.stringify(progress2), '\n3쪽:', JSON.stringify(saved2['3']?.content), '\n4쪽:', JSON.stringify(saved2['4']?.content));
+assert.match(progress2, /쪽을 넘는 각주 1개도 이었어요/);
+assert.match(saved2['3']?.content || '', /\[각주\*\*\*: 이러한 설정은/);
+assert.ok(!/\[각주\*\*\*:/.test(saved2['4']?.content || ''), '두 번째에도 4쪽 맨 위 설명 줄 지움');
+console.log('✓ 같은 쪽들을 다시 교정해도 다시 이음');
 await app.close();
 console.log('모두 통과');

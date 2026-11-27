@@ -1586,6 +1586,8 @@ async function applyToEditor({ reviewed = true } = {}) {
     footMissing: current.footMissing ?? old.footMissing ?? [],
     footOrphans: current.footOrphans ?? old.footOrphans ?? [],
   };
+  // 새로 교정한 쪽이면 이 쪽이 걸린 지난 각주 연결은 버림 (지난 글 기준이라, 남아 있으면 다시 잇지 않음)
+  if (!current.reviewing) book.links = (book.links || []).filter((l) => l.from !== info.currPage && l.to !== info.currPage);
   if (current.footOrphans?.length) findLinks(book, info.currPage, current.footOrphans);
   await putBook(info.bookIdx, book);
   updateReviewBadge(book);
