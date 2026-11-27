@@ -38,6 +38,17 @@ const silo = (fn, arg) => app.evaluate(({}, [src, a]) => eval(src)(globalThis.__
 const mock = () => app.evaluate(() => globalThis.__mock);
 
 let panel = await find(/^silo:\/\/ext\/sidepanel\.html/);
+
+// 교정하기: 이미 교정한 쪽이면 '다시 교정' 확인 창에 답하고, 교정이 시작될 때까지 기다림. 확인 창이 떴으면 true
+async function fix() {
+  await panel.click('#btnAnalyze');
+  const which = await panel.waitForFunction(() => document.querySelector('#askDlg')?.open ? 'ask' : document.querySelector('#btnAnalyze').classList.contains('on') ? 'on' : null, null, { timeout: 20000 });
+  if ((await which.jsonValue()) !== 'ask') return false;
+  await panel.click('#askOk');
+  await panel.waitForFunction(() => document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 20000 });
+  return true;
+}
+
 panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 panel.on('dialog', (d) => d.accept());
 const bar = await find(/^silo:\/\/app\/bar\.html/);
@@ -97,7 +108,7 @@ await home2.click('#editPopup');
 const editor = await find(/make_book\.html/);
 await editor.waitForFunction(() => window.CKEDITOR && CKEDITOR.instances.content);
 await panel.click('#btnAuto');
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.match(await panel.inputValue('#output'), /151쪽 제목/);
@@ -125,7 +136,7 @@ await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장 (�
 await panel.waitForFunction(() => /저장했어요/.test(document.querySelector('#advancedMsg').textContent));
 await panel.click('#btnCloseSettings');
 await panel.click('#btnAuto');
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 120000 });
 const autoErr = await panel.textContent('#error');
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 60000 });
