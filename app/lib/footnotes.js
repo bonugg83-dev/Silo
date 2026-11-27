@@ -46,7 +46,8 @@ export function findLinks(book, page, orphans) {
   return made;
 }
 
-const NOTE_NAME = '(?:각주|미주|주석|후주|주)';
+// 각주 이름 + 번호나 기호만 (예: 각주3, 각주12, 각주*, 각주***, 미주5, 주석#, 주2). "[주의]", "[주요 …]" 같은 글은 아님
+const NOTE_NAME = '(?:각주|미주|주석|후주|주)[0-9*＊#†‡§※]*';
 /**
  * 결과 글에서 다른 쪽에 걸친 각주를 직접 찾는다 (모델이 footnotes_without_note·notes_without_marker 에 안 적어도).
  *  - 설명 없는 번호 "[각주3]" → 설명이 다음 쪽에 있는 각주
@@ -56,13 +57,13 @@ const NOTE_NAME = '(?:각주|미주|주석|후주|주)';
 export function deriveFootnotes(text, missing = [], orphans = []) {
   const t = String(text ?? '');
   const miss = [...missing];
-  for (const m of t.matchAll(new RegExp(`\\[(${NOTE_NAME}[^\\]:\\s]*)\\]`, 'g'))) {
+  for (const m of t.matchAll(new RegExp(`\\[(${NOTE_NAME})\\]`, 'g'))) {
     if (!miss.some((l) => norm(l) === norm(m[1]))) miss.push(m[1]);
   }
   const orph = [...orphans];
   for (const line of t.split('\n')) {
     if (!line.trim()) continue;
-    const m = line.match(new RegExp(`^\\s*\\[(${NOTE_NAME}[^\\]:]*?)\\s*:\\s*([\\s\\S]*)\\]\\s*$`));
+    const m = line.match(new RegExp(`^\\s*\\[(${NOTE_NAME})\\s*:\\s*([\\s\\S]*)\\]\\s*$`));
     if (!m) break; // 맨 위 설명 줄들만 (본문이 나오면 멈춤)
     if (!orph.some((o) => norm(o.label) === norm(m[1]))) orph.push({ label: m[1], note: m[2].trim() });
   }

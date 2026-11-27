@@ -39,3 +39,16 @@ test('결과 글에서 직접 찾기: 설명 없는 번호, 맨 위에 따로 �
   const e = deriveFootnotes('[각주3: 설명]\n본문[각주4]', ['각주4'], [{ label: '각주3', note: '설명' }]);
   assert.deepEqual(e, { missing: ['각주4'], orphans: [{ label: '각주3', note: '설명' }] });
 });
+
+test('모든 각주 모양: 숫자·기호·다른 이름, 여러 개는 차례대로. "[주의]" 같은 글은 각주가 아님', async () => {
+  const { deriveFootnotes } = await import('../app/lib/footnotes.js');
+  const miss = (t) => deriveFootnotes(t).missing;
+  assert.deepEqual(miss('가[각주3] 나[각주12] 다[각주***] 라[각주#] 마[미주5] 바[주석*] 사[주2] 아[각주†]'),
+    ['각주3', '각주12', '각주***', '각주#', '미주5', '주석*', '주2', '각주†']);
+  assert.deepEqual(miss('[주의] 뜨거움 [주요 내용] [주인공]'), []);
+  assert.deepEqual(deriveFootnotes('[주의: 뜨거운 물]\n본문').orphans, [], '맨 위 "[주의: …]"도 각주 설명이 아님');
+  assert.deepEqual(deriveFootnotes('[미주5: 설명 가]\n[각주12: 설명 나]\n본문').orphans.map((o) => o.label), ['미주5', '각주12']);
+  const book = { pages: { 10: { footMissing: ['각주12', '각주13'] }, 11: {} } };
+  const made = findLinks(book, 11, [{ label: '각주1', note: '가' }, { label: '각주2', note: '나' }]);
+  assert.deepEqual(made.map((l) => [l.label, l.toLabel]), [['각주12', '각주1'], ['각주13', '각주2']]);
+});
