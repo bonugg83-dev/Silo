@@ -1,11 +1,14 @@
 // Claude Messages API 호출 (브라우저에서 직접 호출).
 // 압축 해제 확장 프로그램은 빌드 단계가 없어 SDK 대신 fetch로 REST API를 호출한다.
 import { SYSTEM_PROMPT, RESULT_SCHEMA } from './prompt.js';
+import { callGemini, isGemini } from './gemini.js';
 
 export const MODELS = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 권장)', inPrice: 4, outPrice: 20, cacheRead: 0.2 },
   { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 저렴)', inPrice: 2, outPrice: 10, cacheRead: 0.1 },
   { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 (가장 정확, 비쌈)', inPrice: 8, outPrice: 40, cacheRead: 0.2 },
+  // 구글 Gemini: 설정에서 Gemini 키를 따로 넣어야 씀 (lib/gemini.js)
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (구글, 더 저렴, 미리보기)', inPrice: 2, outPrice: 12, cacheRead: 0.2, provider: 'gemini' },
 ];
 
 export class ClaudeError extends Error {
@@ -39,6 +42,9 @@ function parseDataUrl(dataUrl) {
  * 돌려주는 turn({user, assistant})을 다음 호출의 prior로 넘긴다.
  */
 export async function callClaude(params) {
+  if (isGemini(params.model)) {
+    return callGemini({ schema: RESULT_SCHEMA, system: SYSTEM_PROMPT, ...params }, ClaudeError);
+  }
   const { apiKey, model, effort, imageDataUrl, userText, signal, useFallbacks = true,
     schema = RESULT_SCHEMA, system = SYSTEM_PROMPT, bookBlock = '', prior = null, cacheUser = false } = params;
   const images = params.images || (imageDataUrl ? [imageDataUrl] : []);

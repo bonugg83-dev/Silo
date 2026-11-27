@@ -71,7 +71,7 @@ window.siloDesktop = { version: 1 };
 // 앱 화면(silo://)에서 바로 보내면 컴퓨터·네트워크에 따라 "Failed to fetch" 로 막힐 수 있다.
 // 연결이 실패하면 진짜 이유(net::ERR_...)를 오류 글에 붙인다.
 // Claude API와 온라인 계정(Firebase) 주소만 앱 본체가 대신 보낸다
-const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com)\//;
+const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com|generativelanguage\.googleapis\.com)\//;
 const pageFetch = window.fetch.bind(window);
 let apiSeq = 0;
 window.fetch = async (input, init = {}) => {
