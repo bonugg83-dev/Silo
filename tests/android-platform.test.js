@@ -11,7 +11,7 @@ function load() {
   const layouts = [];
   const store = { local: {}, session: {} };
   const win = {
-    location: { origin: 'https://appassets.androidplatform.net' },
+    location: { origin: 'https://appassets.androidplatform.net', pathname: '/assets/sidepanel.html' },
     localStorage: { getItem: () => null, removeItem() {} },
     matchMedia: () => ({ matches: false }),
     addEventListener() {},
@@ -35,10 +35,14 @@ function load() {
         queueMicrotask(() => win.__siloNative.emit('storage', changes, a[0]));
       } else if (method === 'scripting.exec') {
         ok({ ran: a[1].slice(0, 8), args: a[2] });
+      } else if (method === 'runtime.send') {
+        ok({ echoed: a[0] });
       } else if (method === 'tabs.create') {
         queueMicrotask(() => win.__siloNative.resolve(id, false, '다음 버전'));
       } else ok([]);
     },
+    responses: [],
+    respond(reqId, json) { this.responses.push([reqId, JSON.parse(json)]); },
     firstLoad: () => true,
     dockShift: () => JSON.stringify({ dx: 800, dy: 48 }),
     layoutMode: (j) => layouts.push(JSON.parse(j)),
@@ -73,7 +77,7 @@ test('편집 화면에서 함수 실행: 함수를 소스 글자로 넘기고 [{
 
 test('실패는 오류로, 콜백 방식도 됨, 앱 파일 주소', async () => {
   const { p } = load();
-  await assert.rejects(p.tabs.create({ url: 'x' }), /다음 버전/);
+  await assert.rejects(p.tabs.create({ url: 'x' }), /다음 버전/); // (가짜 쪽이 거절하면 오류로 받음)
   const got = await new Promise((res) => p.tabs.query({}, res));
   assert.deepEqual(got, []);
   assert.equal(p.runtime.getURL('practice/practice.html'), 'https://appassets.androidplatform.net/assets/practice/practice.html');
@@ -91,4 +95,29 @@ test('app/lib/platform.js 가 요구하는 기능을 모두 갖춤', async () =>
     .match(/'([^']+)'/g).map((s) => s.slice(1, -1));
   const missing = req.filter((k) => typeof k.split('.').reduce((o, x) => o?.[x], p) !== 'function');
   assert.deepEqual(missing, []);
+});
+
+test('패널 ↔ 테스트 화면 메시지: 보내기는 안드로이드로, 받으면 한 번만 답함', async () => {
+  const { win, p } = load();
+  assert.equal(JSON.stringify(await p.runtime.sendMessage({ practiceCall: true, fn: 'pageRead' })), '{"echoed":{"practiceCall":true,"fn":"pageRead"}}');
+  // 받는 쪽: 비동기로 답하는 리스너
+  p.runtime.onMessage.addListener((msg, sender, sendResponse) => { setTimeout(() => { sendResponse({ ok: true, got: msg.fn }); sendResponse('두 번째는 무시'); }, 0); return true; });
+  win.__siloNative.emit('message', { fn: 'pageApply' }, { id: 'silo' }, 'm1');
+  await new Promise((r) => setTimeout(r, 5));
+  // 아무도 받지 않는 페이지는 곧바로 빈 답
+  const other = load();
+  other.win.__siloNative.emit('message', { fn: 'x' }, { id: 'silo' }, 'm2');
+  assert.equal(JSON.stringify(win.SiloNative.responses), JSON.stringify([['m1', { ok: true, got: 'pageApply' }]]));
+  assert.equal(JSON.stringify(other.win.SiloNative.responses), JSON.stringify([['m2', null]]));
+});
+
+test('테스트 화면에서는 화면 배치를 보내지 않음 (패널만)', () => {
+  const win = { location: { origin: 'https://appassets.androidplatform.net', pathname: '/assets/practice/practice.html' },
+    localStorage: { getItem: () => null, removeItem() {} }, matchMedia: () => ({ matches: false }), addEventListener() {}, setTimeout: () => 0 };
+  win.window = win;
+  const layouts = [];
+  win.SiloNative = { call() {}, firstLoad: () => false, dockShift: () => '{}', layoutMode: (j) => layouts.push(j), respond() {} };
+  vm.runInNewContext(src, win);
+  assert.ok(win.siloPlatform);
+  assert.equal(layouts.length, 0);
 });

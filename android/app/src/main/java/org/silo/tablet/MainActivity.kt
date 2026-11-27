@@ -16,6 +16,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
+import android.webkit.ValueCallback
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -38,18 +39,21 @@ import org.json.JSONTokener
 /**
  * Silo 태블릿 앱 (가로 고정)
  *
- *   위쪽 줄 ─ 뒤로, 새로고침, 열린 창(마이픽 / 편집 화면 151쪽 ×), 패널 접기
+ *   위쪽 줄 ─ 뒤로, 새로고침, 열린 창(마이픽 / 편집 화면 151쪽 × / 테스트 화면 ×), 테스트, 패널 접기
  *   왼쪽     ─ 마이픽 사이트. 사이트가 여는 창(편집 화면 등)은 따로 뜨지 않고 왼쪽 칸에 겹쳐 열림
  *   오른쪽   ─ Silo 패널 (app/sidepanel.html, 모든 플랫폼이 같이 쓰는 앱 코드)
  *   로그인 화면·시작 모션 동안은 패널이 화면 전체
  *
  * 앱 코드는 플랫폼 창구(window.siloPlatform, res/raw/silo_platform.js)로만 부탁하고, 실제 일은 이 파일이 한다.
+ * 앱 페이지는 패널과 테스트 화면(왼쪽 칸에 탭으로 열림) 두 가지이고, 둘 다 창구를 받는다. 사이트 페이지는 받지 않는다.
  */
 class MainActivity : Activity() {
     companion object {
         const val HOME = "https://www.mypickebook.org/"
         const val APP_ORIGIN = "https://appassets.androidplatform.net"
         const val PANEL_URL = "$APP_ORIGIN/assets/sidepanel.html"
+        const val PRACTICE_URL = "$APP_ORIGIN/assets/practice/practice.html?idx=0&book_page=1"
+        const val REQ_FILE = 7
         const val SITE_ID = 1
         const val TAG = "Silo"
         @Volatile var firstLoadDone = false
@@ -65,8 +69,11 @@ class MainActivity : Activity() {
     private lateinit var panel: WebView
     private lateinit var togglePanel: TextView
 
-    /** 탭 = 마이픽 사이트(1번)와 사이트가 연 창들 */
+    /** 탭 = 마이픽 사이트(1번), 사이트가 연 창들, 테스트 화면 */
     private val tabs = LinkedHashMap<Int, WebView>()
+    /** 창구를 받는 앱 페이지: 웹뷰 → 탭 번호 (패널은 null) */
+    private val appViews = LinkedHashMap<WebView, Int?>()
+    private var filePick: ValueCallback<Array<Uri>>? = null
     private var nextTabId = 2
     private var shownPopup: Int? = null
 
@@ -92,7 +99,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         siteArea = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
         divider = View(this).apply { setBackgroundColor(Color.parseColor("#2c2c2c")) }
-        panel = buildPanel()
+        panel = buildAppView(null)
         content.addView(siteArea, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         content.addView(divider, LinearLayout.LayoutParams(px(1), ViewGroup.LayoutParams.MATCH_PARENT))
         content.addView(panel, LinearLayout.LayoutParams(px(400), ViewGroup.LayoutParams.MATCH_PARENT))
@@ -135,6 +142,7 @@ class MainActivity : Activity() {
         strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(strip) }
         bar.addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        bar.addView(pill("테스트") { openAppTab(PRACTICE_URL) }.apply { contentDescription = "테스트 화면 열기" }, lp())
         togglePanel = pill("패널 접기") { panelHidden = !panelHidden; applyLayout() }
         bar.addView(togglePanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return bar
@@ -160,6 +168,7 @@ class MainActivity : Activity() {
 
     private fun popupTitle(web: WebView): String {
         val u = web.url ?: ""
+        if (appViews.containsKey(web)) return "테스트 화면"
         if (Regex("mypickebook\\.org/making/make_book\\.html").containsMatchIn(u)) {
             val n = Regex("[?&]book_page=(\\d+)").find(u)?.groupValues?.get(1)
             return if (n != null) "편집 화면 ${n}쪽" else "편집 화면"
@@ -263,12 +272,13 @@ class MainActivity : Activity() {
         for ((tid, w) in tabs) w.visibility = if (tid == id) View.VISIBLE else View.INVISIBLE
         tabs[id]?.bringToFront()
         renderStrip()
-        panelEmit("activated", JSONObject().put("tabId", id).put("windowId", id).toString())
+        emitAll("activated", JSONObject().put("tabId", id).put("windowId", id).toString())
     }
 
     private fun closeTab(id: Int) {
         if (id == SITE_ID) return
         val w = tabs.remove(id) ?: return
+        appViews.remove(w)
         siteArea.removeView(w)
         w.destroy()
         if (shownPopup == id) showTab(tabs.keys.lastOrNull() ?: SITE_ID) else renderStrip()
@@ -298,7 +308,7 @@ class MainActivity : Activity() {
     private fun emitUpdated(id: Int, change: JSONObject) {
         val info = tabInfo(id) ?: return
         if (change.has("url")) info.put("url", change.getString("url"))
-        panelEmit("updated", id.toString(), change.toString(), info.toString())
+        emitAll("updated", id.toString(), change.toString(), info.toString())
     }
 
     /** Silo 계정이 바뀌면 앞사람의 마이픽 로그인(쿠키)을 지우고 사이트를 처음부터 (태블릿은 쿠키가 하나뿐) */
@@ -310,18 +320,21 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- Silo 패널
+    // ---------------------------------------------------------------- 앱 페이지 (패널, 테스트 화면)
+    private val script by lazy { resources.openRawResource(R.raw.silo_platform).bufferedReader().use { it.readText() } }
+    private val loader by lazy { WebViewAssetLoader.Builder().addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this)).build() }
+
+    /** 앱 코드(assets)를 여는 웹뷰. 창구(silo_platform.js + SiloNative 다리)를 받는다. tabId: 테스트 화면이면 그 탭 번호, 패널이면 null */
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
-    private fun buildPanel(): WebView {
-        val loader = WebViewAssetLoader.Builder().addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this)).build()
+    private fun buildAppView(tabId: Int?): WebView {
         val web = WebView(this)
-        web.setBackgroundColor(Color.BLACK)
+        appViews[web] = tabId
+        web.setBackgroundColor(if (tabId == null) Color.BLACK else Color.WHITE)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.allowFileAccess = false
         web.settings.mediaPlaybackRequiresUserGesture = true
-        web.addJavascriptInterface(Bridge(), "SiloNative")
-        val script = resources.openRawResource(R.raw.silo_platform).bufferedReader().use { it.readText() }
+        web.addJavascriptInterface(Bridge(web), "SiloNative")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(web, script, setOf(APP_ORIGIN))
         }
@@ -336,36 +349,82 @@ class MainActivity : Activity() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 // 오래된 웹뷰라 문서 시작 스크립트가 안 되면 여기서라도 (조금 늦을 수 있음)
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(script, null)
+                appViews[view]?.let { emitUpdated(it, JSONObject().put("status", "loading").put("url", url ?: "")) }
+            }
+            override fun onPageFinished(view: WebView, url: String?) {
+                appViews[view]?.let { emitUpdated(it, JSONObject().put("status", "complete")); renderStrip() }
             }
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
-                Log.d(TAG, "panel: ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
+                Log.d(TAG, "app: ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
                 return true
+            }
+            // 테스트 화면의 "테스트 쪽 가져오기"·"내 원본 이미지" 파일 고르기
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                filePick?.onReceiveValue(null)
+                filePick = callback
+                return try { startActivityForResult(params.createIntent(), REQ_FILE); true } catch (_: Exception) { filePick = null; false }
             }
         }
         return web
     }
 
-    private fun panelEmit(name: String, vararg jsonArgs: String) {
+    @Deprecated("Activity.onActivityResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_FILE) {
+            filePick?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+            filePick = null
+            return
+        }
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    /** 테스트 화면을 왼쪽 칸의 탭으로 (이미 열려 있으면 그 탭으로) */
+    private fun openAppTab(url: String): Int {
+        appViews.entries.firstOrNull { it.value != null }?.value?.let { showTab(it); return it }
+        val id = nextTabId++
+        val web = buildAppView(id)
+        tabs[id] = web
+        siteArea.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        web.loadUrl(url)
+        showTab(id)
+        if (panelHidden) { panelHidden = false; applyLayout() }
+        return id
+    }
+
+    private fun emitAll(name: String, vararg jsonArgs: String) {
         val js = "window.__siloNative&&window.__siloNative.emit(${JSONObject.quote(name)}${jsonArgs.joinToString("") { ",$it" }})"
-        main.post { panel.evaluateJavascript(js, null) }
+        main.post { for (w in appViews.keys.toList()) w.evaluateJavascript(js, null) }
     }
 
-    private fun resolve(id: String, json: String) {
-        main.post { panel.evaluateJavascript("window.__siloNative&&window.__siloNative.resolve(${JSONObject.quote(id)},true,$json)", null) }
+    private fun resolve(owner: WebView, id: String, json: String) {
+        main.post { owner.evaluateJavascript("window.__siloNative&&window.__siloNative.resolve(${JSONObject.quote(id)},true,$json)", null) }
     }
 
-    private fun reject(id: String, message: String) {
-        main.post { panel.evaluateJavascript("window.__siloNative&&window.__siloNative.resolve(${JSONObject.quote(id)},false,${JSONObject.quote(message)})", null) }
+    private fun reject(owner: WebView, id: String, message: String) {
+        main.post { owner.evaluateJavascript("window.__siloNative&&window.__siloNative.resolve(${JSONObject.quote(id)},false,${JSONObject.quote(message)})", null) }
     }
 
-    /** 패널의 플랫폼 창구(silo_platform.js)가 부르는 다리 */
-    private inner class Bridge {
+    /** 앱 페이지 사이 메시지(runtime.sendMessage): 답을 기다리는 것 */
+    private class Pending(val owner: WebView, val callId: String, var left: Int)
+    private val pendingMsgs = HashMap<String, Pending>()
+    private var msgSeq = 0
+
+    /** 앱 페이지의 창구(silo_platform.js)가 부르는 다리. owner = 부른 웹뷰 (답은 그 웹뷰로) */
+    private inner class Bridge(private val owner: WebView) {
         @JavascriptInterface
         fun call(id: String, method: String, argsJson: String) {
             main.post {
-                try { handle(id, method, JSONArray(argsJson)) } catch (e: Exception) { reject(id, e.message ?: e.toString()) }
+                try { handle(owner, id, method, JSONArray(argsJson)) } catch (e: Exception) { reject(owner, id, e.message ?: e.toString()) }
+            }
+        }
+        @JavascriptInterface
+        fun respond(reqId: String, json: String) {
+            main.post {
+                val p = pendingMsgs[reqId] ?: return@post
+                p.left--
+                if (json != "null" || p.left <= 0) { pendingMsgs.remove(reqId); resolve(p.owner, p.callId, json) }
             }
         }
         @JavascriptInterface
@@ -375,6 +434,7 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun layoutMode(json: String) {
             main.post {
+                if (owner !== panel) return@post
                 val m = try { JSONObject(json) } catch (_: Exception) { return@post }
                 booting = false
                 authOpen = m.optBoolean("auth")
@@ -384,16 +444,18 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun handle(id: String, method: String, a: JSONArray) {
+    private fun handle(owner: WebView, id: String, method: String, a: JSONArray) {
+        val ok = { json: String -> resolve(owner, id, json) }
+        val fail = { msg: String -> reject(owner, id, msg) }
         when (method) {
-            "storage.get" -> resolve(id, store.get(a.getString(0), a.opt(1)).toString())
+            "storage.get" -> ok(store.get(a.getString(0), a.opt(1)).toString())
             "storage.set" -> {
                 val area = a.getString(0)
                 val items = a.getJSONObject(1)
                 val before = store.localString("activeProfileId")
                 val changes = store.set(area, items)
-                resolve(id, "null")
-                if (changes.length() > 0) panelEmit("storage", changes.toString(), JSONObject.quote(area))
+                ok("null")
+                if (changes.length() > 0) emitAll("storage", changes.toString(), JSONObject.quote(area))
                 if (area == "local" && items.has("activeProfileId")) {
                     val after = store.localString("activeProfileId")
                     if (before.isNotEmpty() && after != before) onProfileChanged()
@@ -402,14 +464,14 @@ class MainActivity : Activity() {
             "storage.remove" -> {
                 val area = a.getString(0)
                 val changes = store.remove(area, a.opt(1))
-                resolve(id, "null")
-                if (changes.length() > 0) panelEmit("storage", changes.toString(), JSONObject.quote(area))
+                ok("null")
+                if (changes.length() > 0) emitAll("storage", changes.toString(), JSONObject.quote(area))
             }
             "storage.clear" -> {
                 val area = a.getString(0)
                 val changes = store.clear(area)
-                resolve(id, "null")
-                if (changes.length() > 0) panelEmit("storage", changes.toString(), JSONObject.quote(area))
+                ok("null")
+                if (changes.length() > 0) emitAll("storage", changes.toString(), JSONObject.quote(area))
             }
             "tabs.query" -> {
                 val q = a.optJSONObject(0) ?: JSONObject()
@@ -419,20 +481,31 @@ class MainActivity : Activity() {
                     if (q.has("active") && q.optBoolean("active") != info.optBoolean("active")) continue
                     out.put(info)
                 }
-                resolve(id, out.toString())
+                ok(out.toString())
             }
-            "tabs.get" -> tabInfo(a.optInt(0))?.let { resolve(id, it.toString()) } ?: reject(id, "No tab with id: ${a.opt(0)}.")
+            "tabs.get" -> tabInfo(a.optInt(0))?.let { ok(it.toString()) } ?: fail("No tab with id: ${a.opt(0)}.")
+            "tabs.getCurrent" -> ok(appViews[owner]?.let { tabInfo(it)?.toString() } ?: "null")
             "tabs.update" -> {
                 val tid = a.optInt(0)
                 if (a.optJSONObject(1)?.optBoolean("active") == true) showTab(tid)
-                tabInfo(tid)?.let { resolve(id, it.toString()) } ?: reject(id, "No tab with id: $tid.")
+                tabInfo(tid)?.let { ok(it.toString()) } ?: fail("No tab with id: $tid.")
             }
             "tabs.create" -> {
-                Toast.makeText(this, "태블릿에서는 다음 버전부터 테스트 화면을 쓸 수 있어요.", Toast.LENGTH_LONG).show()
-                reject(id, "태블릿에서는 다음 버전부터 테스트 화면을 쓸 수 있어요.")
+                val url = a.optJSONObject(0)?.optString("url") ?: ""
+                if (!url.startsWith(APP_ORIGIN)) return fail("앱 안의 화면만 열 수 있어요.")
+                ok(tabInfo(openAppTab(url))!!.toString())
             }
-            "scripting.exec" -> runInSite(id, a.optInt(0), a.getString(1), a.optJSONArray(2) ?: JSONArray())
-            else -> reject(id, "모르는 기능: $method")
+            "runtime.send" -> {
+                val targets = appViews.keys.filter { it !== owner }
+                if (targets.isEmpty()) return ok("null")
+                val reqId = "m${++msgSeq}"
+                pendingMsgs[reqId] = Pending(owner, id, targets.size)
+                val js = "window.__siloNative&&window.__siloNative.emit('message',${a.opt(0) ?: "null"},{\"id\":\"silo\"},${JSONObject.quote(reqId)})"
+                for (w in targets) w.evaluateJavascript(js, null)
+                main.postDelayed({ pendingMsgs.remove(reqId)?.let { resolve(it.owner, it.callId, "null") } }, 120_000)
+            }
+            "scripting.exec" -> runInSite(owner, id, a.optInt(0), a.getString(1), a.optJSONArray(2) ?: JSONArray())
+            else -> fail("모르는 기능: $method")
         }
     }
 
@@ -444,8 +517,8 @@ class MainActivity : Activity() {
      * 기다려야 하는 함수(이미지 가져오기, 올리기)는 결과를 그 페이지에 적어 두게 하고 0.1초마다 확인한다
      * (안드로이드 웹뷰는 Promise를 기다려 주지 않음).
      */
-    private fun runInSite(id: String, tabId: Int, src: String, args: JSONArray) {
-        val web = tabs[tabId] ?: return reject(id, "No tab with id: $tabId.")
+    private fun runInSite(owner: WebView, id: String, tabId: Int, src: String, args: JSONArray) {
+        val web = tabs[tabId] ?: return reject(owner, id, "No tab with id: $tabId.")
         val token = JSONObject.quote("silo${++execSeq}")
         val js = "(function(){var T=$token;window.__siloRes=window.__siloRes||{};" +
             "function done(o){window.__siloRes[T]=JSON.stringify(o);}" +
@@ -454,14 +527,14 @@ class MainActivity : Activity() {
             "function(e){done({ok:false,error:String(e&&e.message||e)});});return 'PENDING';}" +
             "return JSON.stringify({ok:true,result:r===undefined?null:r});" +
             "}catch(e){return JSON.stringify({ok:false,error:String(e&&e.message||e)});}})()"
-        web.evaluateJavascript(js) { raw -> takeResult(id, web, token, raw, System.currentTimeMillis()) }
+        web.evaluateJavascript(js) { raw -> takeResult(owner, id, web, token, raw, System.currentTimeMillis()) }
     }
 
-    private fun takeResult(id: String, web: WebView, token: String, raw: String?, started: Long) {
+    private fun takeResult(owner: WebView, id: String, web: WebView, token: String, raw: String?, started: Long) {
         val s = try { JSONTokener(raw ?: "null").nextValue() } catch (_: Exception) { null }
         if (s is String && s != "PENDING") {
-            val o = try { JSONObject(s) } catch (e: Exception) { return reject(id, "편집 화면의 답을 읽지 못했어요.") }
-            if (!o.optBoolean("ok")) return reject(id, o.optString("error", "편집 화면에서 오류가 났어요."))
+            val o = try { JSONObject(s) } catch (e: Exception) { return reject(owner, id, "편집 화면의 답을 읽지 못했어요.") }
+            if (!o.optBoolean("ok")) return reject(owner, id, o.optString("error", "편집 화면에서 오류가 났어요."))
             val v = o.opt("result")
             val text = when (v) {
                 null, JSONObject.NULL -> "null"
@@ -469,13 +542,13 @@ class MainActivity : Activity() {
                 is String -> JSONObject.quote(v)
                 else -> v.toString()
             }
-            return resolve(id, text)
+            return resolve(owner, id, text)
         }
-        if (System.currentTimeMillis() - started > 180_000 || idOf(web) == null) return reject(id, "편집 화면에서 답이 없어요.")
+        if (System.currentTimeMillis() - started > 180_000 || idOf(web) == null) return reject(owner, id, "편집 화면에서 답이 없어요.")
         main.postDelayed({
-            if (idOf(web) == null) return@postDelayed reject(id, "편집 화면이 닫혔어요.")
+            if (idOf(web) == null) return@postDelayed reject(owner, id, "편집 화면이 닫혔어요.")
             web.evaluateJavascript("(function(){var m=window.__siloRes||{};var r=m[$token];if(r!==undefined){delete m[$token];return r;}return null;})()") {
-                takeResult(id, web, token, it, started)
+                takeResult(owner, id, web, token, it, started)
             }
         }, 100)
     }
