@@ -75,6 +75,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle # 받은 빌드 부품을 저장해 두고 다음 빌드에 다시 씀 (Maven 서버가 가끔 429로 막아서)
       # 서명 키: 저장소 Settings → Secrets 의 SILO_KEYSTORE_B64 (키 파일을 base64로), SILO_KEYSTORE_PASSWORD, SILO_KEY_ALIAS, SILO_KEY_PASSWORD
       - name: 서명 키 준비
         id: key
@@ -97,7 +98,13 @@ jobs:
           SILO_KEY_ALIAS: ${{ secrets.SILO_KEY_ALIAS }}
           SILO_KEY_PASSWORD: ${{ secrets.SILO_KEY_PASSWORD }}
         run: |
-          ./gradlew assembleRelease --no-daemon
+          # 부품을 받는 서버가 잠깐 막히면(429 등) 조금 기다렸다가 다시 (최대 3번)
+          for i in 1 2 3; do
+            ./gradlew assembleRelease --no-daemon && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            echo "::warning::빌드 실패, $((i * 30))초 뒤 다시 시도 ($i/3)"
+            sleep $((i * 30))
+          done
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/Silo-${{ needs.windows.outputs.version }}.apk"
       - name: 같은 릴리스에 APK 붙이기
