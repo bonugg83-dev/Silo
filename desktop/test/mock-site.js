@@ -8,7 +8,24 @@ const pageImg = fs.readFileSync(path.join(FIX, 'page.jpg'));
 const originalImg = fs.readFileSync(path.join(FIX, 'original.png'));
 const S = (globalThis.__mock = { saves: [], uploads: [], apiCalls: [] });
 
+// SILO_MOCK_FOOTNOTES=1: Gemini처럼 쪽을 넘는 각주 — 152쪽엔 번호만 [각주***], 153쪽 맨 위엔 새 번호로 [각주*: 설명],
+// 모델은 footnotes_without_note·notes_without_marker 를 비워 둠
+const GEMINI_FOOTNOTES = !!process.env.SILO_MOCK_FOOTNOTES;
+// 테스트 화면용: SILO_MOCK_FOOTNOTES=3,4 처럼 쪽을 주면 그 두 쪽에서 (번호가 같은 [각주***])
+const [FN_A, FN_B] = /^\d+,\d+$/.test(process.env.SILO_MOCK_FOOTNOTES || '') ? process.env.SILO_MOCK_FOOTNOTES.split(',').map(Number) : [];
 function resultFor(page) {
+  const base = { page_number: String(page), page_kind: 'body', is_blank_page: false, has_poem_or_quote: false, visuals: [], flags: [], notes: '', footnotes_without_note: [], notes_without_marker: [] };
+  if (FN_A && page === FN_A) return { ...base, text: `본문 ${page} ‘스메타나’[각주***]에 대한 대사`, footnotes_without_note: [{ label: '각주***' }] };
+  if (FN_A && page === FN_B) return { ...base, text: `[각주***: 이러한 설정은 연출적 장치로 해석할 수 있다.]\n본문 ${page}`, notes_without_marker: [{ label: '각주***', note: '이러한 설정은 연출적 장치로 해석할 수 있다.' }] };
+  if (FN_A) return { ...base, text: `본문 ${page}` };
+  if (GEMINI_FOOTNOTES && page === 152) {
+    return { text: '@@{152쪽 제목\n본문 152 ‘스메타나’[각주***]에 대한 대사', page_number: '152', page_kind: 'body', is_blank_page: false,
+      has_poem_or_quote: false, visuals: [], flags: [], notes: '', footnotes_without_note: [], notes_without_marker: [] };
+  }
+  if (GEMINI_FOOTNOTES && page === 153) {
+    return { text: '[각주*: 이러한 설정은 연출적 장치로 해석할 수 있다.]\n본문 153', page_number: '153', page_kind: 'body', is_blank_page: false,
+      has_poem_or_quote: false, visuals: [], flags: [], notes: '', footnotes_without_note: [], notes_without_marker: [] };
+  }
   if (page === 153) {
     return { text: '@@{153쪽 제목\n[그림] 꽃 그림(Flower)\n@@i\n설명 첫 줄\n[그림 끝]\n본문 153', page_number: '153', page_kind: 'body',
       is_blank_page: false, has_poem_or_quote: false,
@@ -39,7 +56,9 @@ async function site(req) {
   if (url.pathname === '/making/history.html') return res('<!doctype html><meta charset="utf-8"><title>기록</title><h1 id="h">작업 기록</h1>', 'text/html; charset=utf-8');
   if (url.pathname === '/making/make_book.html') {
     const page = Number(url.searchParams.get('book_page') || 151);
-    const html = mockHtml.replaceAll('__PAGE__', String(page)).replaceAll('__END__', '153').replace('__OCR__', `${page}쪽 OCR 본문`);
+    // 실제 사이트처럼 저장한 내용을 다시 보여 줌 (각주 잇기 시험 때만: 다른 시험은 늘 OCR로 시작)
+    const kept = GEMINI_FOOTNOTES ? [...S.saves].reverse().find((x) => x.page === page)?.content : null;
+    const html = mockHtml.replaceAll('__PAGE__', String(page)).replaceAll('__END__', '153').replace('__OCR__', () => kept ?? `${page}쪽 OCR 본문`);
     return res(html, 'text/html; charset=utf-8');
   }
   if (url.pathname === '/making/file.php' || url.pathname === '/common/file.php') return res(pageImg, 'image/jpeg');
