@@ -5,7 +5,27 @@
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export const isGemini = (model) => /^gemini-/.test(model || '');
-export const isGeminiKey = (k) => /^AIza[0-9A-Za-z_-]{30,}$/.test(k || '');
+/**
+ * Gemini 키처럼 보이는지만 가볍게 본다 (키 모양은 구글이 바꾸므로 앞글자로 거르지 않음).
+ * 띄어쓰기 없는 20자 이상, Claude 키(sk-ant-)는 아님. 진짜 되는지는 verifyGeminiKey 로 구글에 물어봄
+ */
+export const isGeminiKey = (k) => /^[A-Za-z0-9._\-]{20,}$/.test(k || '') && !/^sk-ant-/.test(k);
+
+/**
+ * 키가 실제로 되는지 구글에 물어봄 (모델 목록 한 줄만, 비용 없음).
+ * @returns {Promise<{ok: boolean, reason?: string, offline?: boolean}>}
+ */
+export async function verifyGeminiKey(key) {
+  let res;
+  try {
+    res = await fetch(`${ENDPOINT}?pageSize=1`, { headers: { 'x-goog-api-key': key } });
+  } catch (e) {
+    return { ok: false, offline: true, reason: `구글에 연결하지 못했어요: ${e?.message || e}` };
+  }
+  if (res.ok) return { ok: true };
+  const j = await res.json().catch(() => ({}));
+  return { ok: false, reason: j?.error?.message || `HTTP ${res.status}` };
+}
 
 function parseDataUrl(dataUrl, ErrorClass) {
   const m = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
