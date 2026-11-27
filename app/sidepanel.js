@@ -9,7 +9,7 @@ import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
   pageFetchMyFeedback,
 } from './lib/page.js';
-import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked } from './lib/footnotes.js';
+import { findLinks, putNoteAtMarker, removeNoteLine, markUnlinked, deriveFootnotes } from './lib/footnotes.js';
 import { editorHtmlToText, downscaleImage, imageSize, displayText } from './lib/convert.js';
 import { alignHeadings } from './lib/headings.js';
 import { fixPageKind, tableFlags, hasSubscriptNote } from './lib/special.js';
@@ -1162,9 +1162,10 @@ async function analyze() {
   logPage({ model: settings.model, usd: cost, calls: r2usage ? 2 : 1, zoom: zoomImgs.length > 0, verifyFull: !!settings.verifyFull,
     ...sumUsage(r1.usage, r2usage) });
 
-  // 다른 쪽에 걸친 각주
-  const footMissing = (result.footnotes_without_note || []).map((f) => f.label).filter(Boolean);
-  const footOrphans = (result.notes_without_marker || []).filter((f) => f.label);
+  // 다른 쪽에 걸친 각주: 모델이 알려 준 것 + 결과 글에서 직접 찾은 것 (모델마다 알려 주는 정도가 달라서)
+  const { missing: footMissing, orphans: footOrphans } = deriveFootnotes(checked.text,
+    (result.footnotes_without_note || []).map((f) => f.label).filter(Boolean),
+    (result.notes_without_marker || []).filter((f) => f.label));
   for (const l of footMissing) {
     extraFlags.push({ kind: 'footnote', needs_review: true, quote: `[${l}]`,
       message: `${l} 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)` });
@@ -2240,18 +2241,20 @@ async function applyLink(link, { inRun = false } = {}) {
     setProgress(`${link.from}쪽 [${link.label}] 자리에 설명을 넣는 중…`);
     const a = await rewritePage(tab, link.from, (t) => putNoteAtMarker(t, link.label, link.note));
     setProgress(`${link.to}쪽 맨 위의 설명을 지우는 중…`);
-    const b2 = await rewritePage(tab, link.to, (t) => removeNoteLine(t, link.label));
+    // 다음 쪽의 설명 줄은 그 쪽에 붙은 번호로 찾음 (모델이 번호를 다르게 붙였으면 toLabel)
+    const toLabel = link.toLabel || link.label;
+    const b2 = await rewritePage(tab, link.to, (t) => removeNoteLine(t, toLabel));
     const b = await mark({ done: true, error: '' });
-    const drop = (rec) => { if (rec) rec.issues = (rec.issues || []).filter((x) => !x.quote || !x.quote.includes(link.label)); };
+    const drop = (rec, label) => { if (rec) rec.issues = (rec.issues || []).filter((x) => !x.quote || !x.quote.includes(label)); };
     if (b.pages[link.from]) {
       b.pages[link.from].text = a.text;
       b.pages[link.from].footMissing = (b.pages[link.from].footMissing || []).filter((l) => l !== link.label);
-      drop(b.pages[link.from]);
+      drop(b.pages[link.from], link.label);
     }
     if (b.pages[link.to]) {
       b.pages[link.to].text = b2.text;
-      b.pages[link.to].footOrphans = (b.pages[link.to].footOrphans || []).filter((o) => o.label !== link.label);
-      drop(b.pages[link.to]);
+      b.pages[link.to].footOrphans = (b.pages[link.to].footOrphans || []).filter((o) => o.label !== toLabel);
+      drop(b.pages[link.to], toLabel);
     }
     await putBook(bookIdx, b);
     setProgress(`${link.from}쪽 [${link.label}]에 설명을 옮기고 두 쪽을 임시저장했어요.`);

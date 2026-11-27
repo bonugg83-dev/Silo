@@ -223,7 +223,9 @@ export function buildWriteMessage(ctx) {
   t += section('visual_titles_so_far', ctx.visualTitles);
   t += section('previous_page_ending', ctx.prevTail);
   t += section('subscript_note_used', ctx.subscriptNoteUsed ? '배정 범위 앞쪽에서 첨자 제작자 주를 이미 썼습니다. 이 쪽에는 다시 넣지 마세요.' : '');
-  t += section('pending_footnotes', ctx.pendingFootnotes ? `앞쪽에 번호만 있고 설명이 없는 각주: ${ctx.pendingFootnotes}` : '');
+  t += section('pending_footnotes', ctx.pendingFootnotes
+    ? `앞쪽에 번호만 있고 설명이 없는 각주: ${ctx.pendingFootnotes}\n이 쪽 아래의 설명이 이 각주의 설명이면, 이 쪽에서 새 번호를 매기지 말고 앞쪽 번호를 그대로 써서 text 맨 위에 "[그 번호: 설명]" 한 줄로 쓰고 notes_without_marker에도 적으세요. (예: 앞쪽이 [각주***]이면 "[각주***: 설명]")`
+    : '');
   t += section('page_info', `작업 쪽: ${ctx.currPage}\n편집 화면 쪽 번호 칸: ${ctx.pageField || '(비어 있음)'}${ctx.pageTotal ? `\n배정 범위: ${ctx.pageTotal}` : ''}`);
   t += section('ocr_text', ctx.ocrText || '(OCR 텍스트 없음)');
   t += section('image_size', `원본 이미지 크기: 가로 ${ctx.imageWidth}px, 세로 ${ctx.imageHeight}px (visuals의 box 좌표 기준)`
