@@ -9,7 +9,9 @@
 
 ## 설치 (윈도 데스크톱 앱)
 
-[Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 한 번 설치하면, 그다음부터는 앱이 스스로 업데이트합니다. 자세한 내용은 [`desktop/README.md`](desktop/README.md)를 보세요. 태블릿(안드로이드) 앱은 준비 중입니다.
+[Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 한 번 설치하면, 그다음부터는 앱이 스스로 업데이트합니다. 자세한 내용은 [`desktop/README.md`](desktop/README.md)를 보세요.
+
+**태블릿(안드로이드)**: 같은 릴리스의 `Silo-<버전>.apk`를 태블릿에서 받아 설치합니다(처음 한 번 "출처를 알 수 없는 앱" 허용). 가로 화면 전용이고, 왼쪽은 마이픽, 오른쪽은 Silo 패널입니다. 아직 테스트 화면과 앱 안 자동 업데이트는 없어서, 새 버전은 Releases에서 APK를 받아 덮어 설치합니다. 자세한 내용은 [`android/README.md`](android/README.md).
 
 크롬 확장 프로그램으로는 더 이상 배포하지 않습니다.
 
@@ -83,6 +85,7 @@ app/                   모든 플랫폼이 같이 쓰는 앱 (화면 + 로직)
   lib/footnotes.js     다른 쪽에 걸친 각주 잇기
   practice/            테스트 화면 (마이픽 편집 화면 흉내, 테스트 묶음 가져오기)
 desktop/               윈도·맥 앱 (Electron): preload-shim.js 가 플랫폼 창구를 만들고 main.js 가 실제 일을 함
+android/               태블릿 앱 (Kotlin + 웹뷰): res/raw/silo_platform.js 가 창구를 만들고 MainActivity.kt 가 실제 일을 함
 tests/
   *.test.js            로직 단위 테스트:  npm test
   e2e*.mjs             app/을 크롬에 올려 하는 브라우저 흐름 테스트:  npm run e2e (Playwright 필요)
