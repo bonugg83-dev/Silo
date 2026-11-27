@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +16,8 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.provider.Settings
+import android.view.WindowInsets
 import android.webkit.ConsoleMessage
 import android.webkit.ValueCallback
 import android.webkit.CookieManager
@@ -29,6 +32,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -68,6 +72,8 @@ class MainActivity : Activity() {
     private lateinit var divider: View
     private lateinit var panel: WebView
     private lateinit var togglePanel: TextView
+    private lateinit var updateBtn: TextView
+    private lateinit var updater: Updater
 
     /** 탭 = 마이픽 사이트(1번), 사이트가 연 창들, 테스트 화면 */
     private val tabs = LinkedHashMap<Int, WebView>()
@@ -106,6 +112,7 @@ class MainActivity : Activity() {
         root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(48)))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+        fitSystemBars()
 
         val site = newSiteView()
         tabs[SITE_ID] = site
@@ -115,6 +122,59 @@ class MainActivity : Activity() {
         main.postDelayed({ if (booting) { booting = false; applyLayout() } }, 6000) // 패널이 끝내 알려 오지 않아도
         panel.loadUrl(PANEL_URL)
         site.loadUrl(HOME)
+
+        // 자동 업데이트: 켜고 10초 뒤, 그리고 켜 둔 동안 4시간마다 확인
+        updater = Updater(this, BuildConfig.VERSION_NAME) { v -> main.post { showUpdate(v) } }
+        val every = object : Runnable { override fun run() { updater.check(); main.postDelayed(this, 4 * 3600 * 1000L) } }
+        main.postDelayed(every, 10_000)
+        noticeUpdated()
+    }
+
+    /**
+     * 안드로이드 15부터 앱이 화면 끝까지 그려지므로(edge-to-edge), 시간·배터리 표시줄과 아래 제스처 막대,
+     * 화면 키보드 자리만큼 안쪽으로 비운다. 키보드가 올라오면 그만큼 화면이 줄어 입력칸이 가려지지 않는다.
+     */
+    private fun fitSystemBars() {
+        if (Build.VERSION.SDK_INT < 30) return // 안드로이드 10: 시스템이 알아서 비워 줌 (adjustResize)
+        window.setDecorFitsSystemWindows(false)
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsets.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            WindowInsets.CONSUMED
+        }
+    }
+
+    /** 업데이트 뒤 처음 켰을 때 한 번 알려 줌 */
+    private fun noticeUpdated() {
+        val prefs = getSharedPreferences("silo", MODE_PRIVATE)
+        val last = prefs.getString("lastVersion", "") ?: ""
+        val now = BuildConfig.VERSION_NAME
+        if (last.isNotEmpty() && last != now) Toast.makeText(this, "새 버전 ${now}로 업데이트했어요.", Toast.LENGTH_LONG).show()
+        if (last != now) prefs.edit().putString("lastVersion", now).apply()
+    }
+
+    private fun showUpdate(v: String) {
+        updateBtn.text = "새 버전 $v · 설치"
+        updateBtn.visibility = View.VISIBLE
+    }
+
+    /** 받아 둔 새 버전 설치: 안드로이드 설치 화면이 뜨고 "설치"를 한 번 누름. 교정 중이면 하지 않음 */
+    private fun installUpdate() {
+        val f = updater.ready ?: return
+        if (store.runLockActive()) {
+            Toast.makeText(this, "교정이 끝난 뒤에 눌러 주세요.", Toast.LENGTH_LONG).show(); return
+        }
+        if (!packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(this, "Silo에서 앱 설치를 허용해 주세요. 허용한 뒤 돌아와 다시 누르세요.", Toast.LENGTH_LONG).show()
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (_: Exception) {}
+            return
+        }
+        store.flush()
+        CookieManager.getInstance().flush()
+        val uri = FileProvider.getUriForFile(this, "$packageName.updates", f)
+        startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun pill(text: String, onClick: () -> Unit) = TextView(this).apply {
@@ -143,6 +203,11 @@ class MainActivity : Activity() {
         val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(strip) }
         bar.addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         bar.addView(pill("테스트") { openAppTab(PRACTICE_URL) }.apply { contentDescription = "테스트 화면 열기" }, lp())
+        updateBtn = pill("새 버전 · 설치") { installUpdate() }.apply {
+            visibility = View.GONE
+            (background as GradientDrawable).setStroke(px(2), Color.parseColor("#4f9dff"))
+        }
+        bar.addView(updateBtn, lp())
         togglePanel = pill("패널 접기") { panelHidden = !panelHidden; applyLayout() }
         bar.addView(togglePanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return bar
@@ -190,7 +255,7 @@ class MainActivity : Activity() {
         } else {
             panel.visibility = if (panelHidden) View.GONE else View.VISIBLE
             lp.weight = 0f
-            val w = (root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels)
+            val w = contentWidth()
             lp.width = (w * 0.34f).toInt().coerceIn(px(360), px(520))
         }
         panel.layoutParams = lp
@@ -200,8 +265,11 @@ class MainActivity : Activity() {
     }
 
     /** 시작 모션이 끝나는 자리: 오른쪽 패널로 줄어든 뒤 패널 머리 로고 자리 (CSS 픽셀) */
+    private fun contentWidth(): Int =
+        (root.width - root.paddingLeft - root.paddingRight).takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+
     private fun updateDockShift() {
-        val w = root.width.toFloat()
+        val w = contentWidth().toFloat()
         if (w <= 0) return
         val pw = (w * 0.34f).coerceIn(px(360).toFloat(), px(520).toFloat())
         dockShift = JSONObject().put("dx", ((w - pw) / dp).toDouble()).put("dy", (px(48) / dp).toDouble()).toString()

@@ -56,6 +56,17 @@ if (!sw) sw = await context.waitForEvent('serviceworker');
 const extId = new URL(sw.url()).host;
 const errors = [];
 const panel = await context.newPage();
+
+// 교정하기: 이미 교정한 쪽이면 '다시 교정' 확인 창에 답하고, 교정이 시작될 때까지 기다림. 확인 창이 떴으면 true
+async function fix() {
+  await panel.click('#btnAnalyze');
+  const which = await panel.waitForFunction(() => document.querySelector('#askDlg')?.open ? 'ask' : document.querySelector('#btnAnalyze').classList.contains('on') ? 'on' : null, null, { timeout: 20000 });
+  if ((await which.jsonValue()) !== 'ask') return false;
+  await panel.click('#askOk');
+  await panel.waitForFunction(() => document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 20000 });
+  return true;
+}
+
 panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 panel.on('dialog', (d) => d.accept());
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
@@ -85,7 +96,7 @@ assert.equal(await practice.textContent('#pageCount'), '5');
 await panel.click('#btnCloseSettings');
 
 // 자동모드(기본 켜짐)로 교정하기: 빨간 항목이 있어도 멈추지 않고 마지막 쪽까지 저장
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
 console.log('자동 모드:', await panel.textContent('#progress'), await panel.textContent('#error'));
 assert.match(apiCalls[0].text, /남풍의 밤이 여- 큰 별/); // 실제 OCR 전달

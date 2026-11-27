@@ -71,6 +71,11 @@ class Store(dir: File) {
 
     fun localString(key: String): String = local.optString(key, "")
 
+    /** 교정이 도는 중인지: 패널이 교정하는 동안 20초마다 남기는 표시(runlock:)가 최근 것이면 */
+    fun runLockActive(): Boolean = session.keys().asSequence().any { k ->
+        k.startsWith("runlock:") && System.currentTimeMillis() - (session.optJSONObject(k)?.optLong("at") ?: 0L) < 60_000
+    }
+
     /** 0.3초 모아서 한 번에 쓴다 (바꿀 때마다 쓰면 느림) */
     @Synchronized private fun save() {
         pending?.cancel(false)

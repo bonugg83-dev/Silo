@@ -11,7 +11,7 @@
 
 [Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 한 번 설치하면, 그다음부터는 앱이 스스로 업데이트합니다. 자세한 내용은 [`desktop/README.md`](desktop/README.md)를 보세요.
 
-**태블릿(안드로이드)**: 같은 릴리스의 `Silo-<버전>.apk`를 태블릿에서 받아 설치합니다(처음 한 번 "출처를 알 수 없는 앱" 허용). 가로 화면 전용이고, 왼쪽은 마이픽, 오른쪽은 Silo 패널입니다. 아직 앱 안 자동 업데이트는 없어서, 새 버전은 Releases에서 APK를 받아 덮어 설치합니다. 자세한 내용은 [`android/README.md`](android/README.md).
+**태블릿(안드로이드)**: 같은 릴리스의 `Silo-<버전>.apk`를 태블릿에서 받아 설치합니다(처음 한 번 "출처를 알 수 없는 앱" 허용). 가로 화면 전용이고, 왼쪽은 마이픽, 오른쪽은 Silo 패널입니다. 0.4.2부터는 앱이 새 버전을 받아 두고 위쪽 줄에 설치 버튼을 띄웁니다(설치는 한 번 누름). 자세한 내용은 [`android/README.md`](android/README.md).
 
 크롬 확장 프로그램으로는 더 이상 배포하지 않습니다.
 

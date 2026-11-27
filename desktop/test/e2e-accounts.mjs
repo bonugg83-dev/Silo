@@ -42,6 +42,17 @@ const mock = () => app.evaluate(() => globalThis.__mock);
 const bounds = () => silo((s) => s.bounds());
 const errors = [];
 const panel = await find(/^silo:\/\/ext\/sidepanel\.html/);
+
+// 교정하기: 이미 교정한 쪽이면 '다시 교정' 확인 창에 답하고, 교정이 시작될 때까지 기다림. 확인 창이 떴으면 true
+async function fix() {
+  await panel.click('#btnAnalyze');
+  const which = await panel.waitForFunction(() => document.querySelector('#askDlg')?.open ? 'ask' : document.querySelector('#btnAnalyze').classList.contains('on') ? 'on' : null, null, { timeout: 20000 });
+  if ((await which.jsonValue()) !== 'ask') return false;
+  await panel.click('#askOk');
+  await panel.waitForFunction(() => document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 20000 });
+  return true;
+}
+
 panel.on('pageerror', (e) => errors.push(e.message));
 panel.on('dialog', (d) => d.accept());
 
@@ -114,7 +125,7 @@ await site.click('#editPopup');
 const editor = await find(/make_book\.html/);
 await editor.waitForFunction(() => window.CKEDITOR && CKEDITOR.instances.content);
 if ((await panel.getAttribute('#btnAuto', 'aria-checked')) === 'true') await panel.click('#btnAuto');
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.equal((await mock()).apiCalls.at(-1).key, KEY_A);

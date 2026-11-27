@@ -73,10 +73,12 @@ const LABEL = { fix: '교정하기', practice: '테스트', toc: '목차' };
  * 흰 버튼(강조)은 늘 하나. 교정이 도는 동안에는 네온만 (흰색 없음).
  * 자동모드: 교정하기만. 직접 할 때: 교정하기 → 붙여넣기 → 검수.
  */
+// 지금 편집 화면의 쪽이 이미 교정된 쪽인지 (책 기록에 있음). 그러면 교정하기를 강조하지 않음 (다시 누르면 비용이 또 듦)
+let pageDone = null; // {page, reviewed} 또는 null
 function updateEmphasis() {
   const auto = $('btnAuto').getAttribute('aria-checked') === 'true';
   const stage = running ? 'run' : (auto || !current) ? 'fix' : pasted ? 'review' : 'paste';
-  $('btnAnalyze').classList.toggle('white', stage === 'fix');
+  $('btnAnalyze').classList.toggle('white', stage === 'fix' && !pageDone);
   $('btnApply').classList.toggle('white', stage === 'paste');
   $('btnReview').classList.toggle('sec', stage !== 'review');
 }
@@ -886,6 +888,9 @@ async function refreshStatus() {
     const tab = await getEditorTab();
     const info = await runInPage(tab.id, pageRead);
     const book = await getBook(info.bookIdx);
+    const rec = book.pages[info.currPage];
+    pageDone = rec ? { page: info.currPage, reviewed: !!rec.reviewed } : null;
+    updateEmphasis();
     // 연 책은 기록이 지워지지 않게 표시 (한 시간에 한 번만 쓴다)
     if (!running && Date.now() - (book.lastOpened || 0) > 3600 * 1000) await putBook(info.bookIdx, book);
     showTocState(book);
@@ -1689,6 +1694,13 @@ async function startRun() {
   const other = (await platform.storage.session.get(lockKey))[lockKey];
   if (runLockedByOther(other, PANEL_ID)) { setError('다른 창에서 이 계정으로 교정하고 있어요. 그 창의 교정이 끝난 뒤 눌러 주세요.'); return; }
   if (overLimit(me(), await monthUsd())) { setError(`이번 달 한도($${me().monthlyLimit})를 다 썼어요. 설정에서 한도를 바꿀 수 있어요.`); return; }
+  // 이미 교정한 쪽이면 한 번 묻기 (실수로 다시 눌러 비용이 또 나가지 않게)
+  const st = await refreshStatus();
+  if (st && pageDone && !(await ask({
+    title: `${pageDone.page}쪽은 이미 교정했어요`,
+    body: `${pageDone.reviewed ? '검수까지 끝난 쪽이에요. ' : ''}다시 교정하면 Claude 비용이 또 들어요.${autoOn() ? ' 자동 모드는 이 쪽부터 다시 시작해요.' : ''}`,
+    ok: '다시 교정',
+  }))) return;
   runPid = unlocked.pid;
   runKey = unlocked.key;
   const beat = () => platform.storage.session.set({ [lockKey]: { owner: PANEL_ID, at: Date.now() } });
@@ -1728,7 +1740,13 @@ async function startRun() {
 $('btnAnalyze').addEventListener('click', () => {
   if (stopReq) return; // 멈추는 중에는 더 눌러도 그대로
   pop($('btnAnalyze'));
-  if (!running) { startRun(); return; }
+  if (!running) {
+    // 시작 전 확인(이미 교정한 쪽인지 등)하는 사이 또 눌러도 두 번 시작하지 않게
+    if (startRun.busy) return;
+    startRun.busy = true;
+    startRun().finally(() => { startRun.busy = false; });
+    return;
+  }
   // 교정 중에 한 번 더 누르면: 하던 쪽까지만 하고 멈춤
   stopReq = true;
   autoRunning = false;

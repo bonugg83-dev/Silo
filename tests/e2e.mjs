@@ -142,6 +142,17 @@ editor.on('pageerror', (e) => errors.push('editor: ' + e.message));
 await editor.goto('https://www.mypickebook.org/making/make_book.html?idx=23584');
 
 const panel = await context.newPage();
+
+// 교정하기: 이미 교정한 쪽이면 '다시 교정' 확인 창에 답하고, 교정이 시작될 때까지 기다림. 확인 창이 떴으면 true
+async function fix() {
+  await panel.click('#btnAnalyze');
+  const which = await panel.waitForFunction(() => document.querySelector('#askDlg')?.open ? 'ask' : document.querySelector('#btnAnalyze').classList.contains('on') ? 'on' : null, null, { timeout: 20000 });
+  if ((await which.jsonValue()) !== 'ask') return false;
+  await panel.click('#askOk');
+  await panel.waitForFunction(() => document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 20000 });
+  return true;
+}
+
 panel.on('pageerror', (e) => errors.push('panel: ' + e.message));
 // 계정 서버가 400/404로 답하는 건 정상(틀린 비밀번호, 아직 없는 비용 문서)이라 브라우저가 찍는 오류 줄은 뺌
 const cloudFails = new Set();
@@ -232,7 +243,7 @@ await panel.click('#btnAuto');
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'false');
 
 // 3. 151쪽 교정 (목차 팝업 실패 → 알림, 교정은 계속)
-await panel.click('#btnAnalyze');
+await fix();
 assert.ok(await panel.isDisabled('#btnAuto'), '교정 중에는 스위치 못 바꿈');
 assert.ok(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('on')), '교정 중 네온');
 await panel.waitForFunction(() => document.querySelector('#result').dataset.state === 'busy' && document.querySelector('#stepLine').textContent.length > 0);
@@ -315,7 +326,7 @@ assert.equal(tocCalls, 1);
 assert.deepEqual(tocPagesFetched, [1, 2]);
 await panel.click('#tgToc');
 assert.match(await panel.inputValue('#tocText'), /@@\[06\./);
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForFunction(() => document.querySelector('#notes').textContent.includes('2차 검증') && !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.match(apiCalls.at(-2).body.system[1].text, /@@\{1\. 풀잎 145/);
 assert.equal(apiCalls.at(-1).body.system[1].text, apiCalls.at(-2).body.system[1].text, '2차 검증도 같은 책 블록(캐시)');
@@ -353,7 +364,7 @@ await panel.click('#btnAuto'); // 자동모드 켬 (켜기만으로는 시작하
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true');
 assert.equal(apiCalls.length, 4);
 const autoStart = Date.now();
-await panel.click('#btnAnalyze');
+await fix();
 assert.equal(await panel.textContent('#btnAnalyze'), '교정하기', '글자는 그대로');
 await panel.waitForFunction(() => /^\d+s$/.test(document.querySelector('#wait').textContent) && !document.querySelector('#wait').hidden, null, { timeout: 30000 });
 await panel.waitForFunction(() => document.querySelector('#progress').textContent.includes('마지막 쪽') || !document.querySelector('#error').classList.contains('hidden'), null, { timeout: 90000 });
@@ -384,13 +395,24 @@ assert.ok(!(await panel.evaluate(() => document.body.classList.contains('review-
 
 // 7. 153쪽 다시 교정 → 그림이 본문 @@i 자리에 보이고, 눌러서 영역 고치기
 await panel.click('#btnAuto'); // 이 쪽만
+// 이미 교정한 쪽: 교정하기를 강조하지 않고, 누르면 비용이 또 든다고 한 번 물음. 취소하면 아무것도 안 함
+await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('white'), null, { timeout: 20000 });
+const callsBeforeAsk = apiCalls.length;
 await panel.click('#btnAnalyze');
+await panel.waitForSelector('#askDlg[open]');
+assert.match(await panel.textContent('#askTitle'), /153쪽은 이미 교정했어요/);
+assert.match(await panel.textContent('#askBody'), /비용이 또/);
+await panel.click('#askCancel');
+await panel.waitForTimeout(300);
+assert.equal(apiCalls.length, callsBeforeAsk, '취소하면 교정하지 않음');
+assert.ok(!(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('on'))));
+assert.equal(await fix(), true, '다시 교정을 고르면 교정');
 await panel.waitForSelector('#result[data-state="done"]', { timeout: 30000 });
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on'), null, { timeout: 30000 });
 assert.equal(await panel.locator('#outputView .vthumb img').count(), 1, '본문 안 그림');
 // 편집기에 이미 그림이 있어 그대로 다시 씀 (영역 고치기 없음) → 그림을 지우고 새로 자르는 경우를 보려고 편집기를 OCR로 되돌림
 await editor.evaluate(() => { CKEDITOR.instances.content._data = '153쪽 OCR 본문'; });
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForFunction(() => !document.querySelector('#btnAnalyze').classList.contains('on') && document.querySelector('#outputView .vthumb img'), null, { timeout: 30000 });
 await panel.setViewportSize({ width: 420, height: 900 });
 await panel.click('#outputView .vthumb');
@@ -478,7 +500,7 @@ assert.equal(await panel.textContent('#btnApply'), '붙여넣기성공');
 await panel.click('#btnAuto');
 const nextSaves = saves.filter((s) => s.gubun === 'next').length;
 const callsBefore = apiCalls.length;
-await panel.click('#btnAnalyze');
+await fix();
 await panel.waitForFunction(() => document.querySelector('#result').dataset.state === 'busy');
 await panel.click('#btnAnalyze');
 assert.ok(await panel.evaluate(() => document.querySelector('#btnAnalyze').classList.contains('stopping')), '멈추기 요청: 어둡게');
