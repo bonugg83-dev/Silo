@@ -350,3 +350,11 @@ dialog.ask::backdrop { background: rgba(0,0,0,.6); }
   :root { --h: 44px; --h-sm: 44px; }
   .seg button { min-height: 44px; }
 }
+
+/* 손가락으로 쓰는 화면(태블릿): 누르는 곳을 조금 크게. 마우스로 쓰는 데스크톱은 그대로 */
+@media (pointer: coarse) {
+  :root { --h-sm: 40px; --h: 44px; }
+  input[type=text], input[type=password], input[type=number], select { min-height: 44px; font-size: 16px; }
+  .opt { min-height: 48px; }
+  .icon svg { width: 24px; height: 24px; }
+}
