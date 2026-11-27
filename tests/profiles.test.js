@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   encryptKey, decryptKey, makeProfile, checkPassword, isApiKey, maskKey, legacyMigration, profileDataKeys,
   lockExpired, overLimit, runLockedByOther, bookKey, costMonthKey,
-} from '../extension/lib/profiles.js';
-import { staleBookKeys } from '../extension/lib/cleanup.js';
+} from '../app/lib/profiles.js';
+import { staleBookKeys } from '../app/lib/cleanup.js';
 
 const KEY = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
 

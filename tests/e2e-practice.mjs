@@ -1,5 +1,6 @@
 // 연습 페이지 흐름 테스트: 확장 안의 연습 편집 화면 + 가짜 Claude 응답. 사이트로는 아무 요청도 가지 않아야 한다.
-// 실행: node tests/e2e-practice.mjs  (예시 쪽 이미지가 extension/practice/samples에 있어야 함)
+// 실행: node tests/e2e-practice.mjs  (예시 쪽 이미지가 app/practice/samples에 있어야 함)
+import { appForChrome, APP_DIR } from './harness.mjs';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,8 +11,8 @@ import { fakeFirebase } from './fake-firebase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
-const extPath = path.resolve(here, '../extension');
-if (!fs.existsSync(path.join(extPath, 'practice/samples/samples.js'))) { console.log('예시 쪽이 없어 건너뜀'); process.exit(0); }
+const extPath = appForChrome(); // app/을 크롬에 올릴 수 있게 복사 (tests/harness.mjs)
+if (!fs.existsSync(path.join(APP_DIR, 'practice/samples/samples.js'))) { console.log('예시 쪽이 없어 건너뜀'); process.exit(0); }
 
 const siteRequests = [];
 const apiCalls = [];

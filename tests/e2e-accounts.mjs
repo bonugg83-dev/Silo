@@ -1,6 +1,7 @@
 // 계정 테스트: v0.9 이하에서 쓰던 평문 키·책 기록이 첫 회원가입 때 옮겨지는지, 로그인 화면 모양,
 // 온라인 계정(가짜 Firebase): 가입 코드, 다른 컴퓨터에서 로그인, 인터넷이 끊겼을 때 로그인.
 // 실행: node tests/e2e-accounts.mjs  (SHOTS=폴더 를 주면 로그인 화면 스크린숏)
+import { appForChrome, APP_DIR } from './harness.mjs';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import { fakeFirebase } from './fake-firebase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
-const extPath = path.resolve(here, '../extension');
+const extPath = appForChrome(); // app/을 크롬에 올릴 수 있게 복사 (tests/harness.mjs)
 const OLD_KEY = 'sk-ant-api03-OLDKEY_abcdefghijklmnopqrstuvwxyz5678';
 
 const userDataDir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'e2e-acc-'));
@@ -135,7 +136,7 @@ await panel.click('#btnLogin');
 await panel.waitForFunction(() => /맞지 않아요/.test(document.querySelector('#gateMsg').textContent));
 
 // 예전 버전에서 이 컴퓨터에만 만든 계정: 가입 코드 받아 온라인으로 옮김
-const { makeProfile } = await import('../extension/lib/profiles.js');
+const { makeProfile } = await import('../app/lib/profiles.js');
 const old = await makeProfile({ name: 'oldie', apiKey: OLD_KEY, password: 'qwer', iter: 1000 });
 await panel.evaluate((p) => chrome.storage.local.get('profiles').then((r) => chrome.storage.local.set({ profiles: [...r.profiles, p], [`cost:${p.id}:${new Date().toLocaleDateString('sv')}`]: 0.5 })), old);
 await panel.reload();

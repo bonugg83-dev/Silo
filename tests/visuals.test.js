@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVisualBlocks, buildEditorData, existingFigureSrcs } from '../extension/lib/visuals.js';
-import { applyFixes } from '../extension/lib/fixes.js';
-import { editorHtmlToText } from '../extension/lib/convert.js';
+import { parseVisualBlocks, buildEditorData, existingFigureSrcs } from '../app/lib/visuals.js';
+import { applyFixes } from '../app/lib/fixes.js';
+import { editorHtmlToText } from '../app/lib/convert.js';
 
 test('시각자료 블록: 제목 위치가 달라도 찾고, @@i 없는 블록(도표 글자만)은 건너뜀', () => {
   const t = '본문\n[그림] 제목 A\n@@i\n설명\n[그림 끝]\n[표 1]\n가|나\n[표 끝]\n[사진 2-4]\n@@i\n[사진 끝]\n[지도 서울 지도(Seoul)]\n@@i\n[지도 끝]\n[도표]\n글자만\n[도표 끝]';

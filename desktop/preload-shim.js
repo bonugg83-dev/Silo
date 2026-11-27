@@ -1,8 +1,9 @@
-// 확장 페이지(sidepanel.html, practice.html)가 쓰는 chrome.* 기능을 같은 이름으로 흉내 낸다.
+// 앱 페이지(sidepanel.html, practice.html)에 Silo 플랫폼 창구(window.siloPlatform, app/lib/platform.js)를 만들어 준다.
+// 실제 일은 앱 본체(main.js)가 한다.
 // 이 파일은 앱 자신의 페이지에만 들어가고, 마이픽 사이트 페이지에는 절대 들어가지 않는다.
 const { ipcRenderer } = require('electron');
 
-const L = { updated: [], activated: [], message: [], installed: [], startup: [], storage: [] };
+const L = { updated: [], activated: [], message: [], storage: [] };
 const event = (k) => ({
   addListener: (f) => { L[k].push(f); },
   removeListener: (f) => { const i = L[k].indexOf(f); if (i >= 0) L[k].splice(i, 1); },
@@ -31,21 +32,15 @@ function area(name) {
     set: (items, done) => cb(ipcRenderer.invoke('storage:set', name, items), done),
     remove: (k, done) => cb(ipcRenderer.invoke('storage:remove', name, k), done),
     clear: (done) => cb(ipcRenderer.invoke('storage:clear', name), done),
-    setAccessLevel: async () => {},
     onChanged,
   };
 }
 
-window.chrome = {
+window.siloPlatform = {
   runtime: {
-    id: 'silo',
     getURL: (p) => 'silo://ext/' + String(p).replace(/^\//, ''),
-    getManifest: () => ({ version: '0' }),
     sendMessage: (msg, done) => cb(ipcRenderer.invoke('runtime:send', msg), done),
     onMessage: event('message'),
-    onInstalled: event('installed'),
-    onStartup: event('startup'),
-    lastError: undefined,
   },
   storage: {
     local: area('local'),
@@ -69,7 +64,6 @@ window.chrome = {
     executeScript: ({ target, func, args }, done) =>
       cb(ipcRenderer.invoke('scripting:exec', target.tabId, func.toString(), args || []), done),
   },
-  sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
 };
 window.siloDesktop = { version: 1 };
 

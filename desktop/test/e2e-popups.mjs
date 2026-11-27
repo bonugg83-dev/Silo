@@ -12,7 +12,7 @@ const { _electron: electron } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const accounts = fs.existsSync(path.join(process.env.SILO_EXT || path.join(root, '..', 'extension'), 'lib', 'profiles.js'));
+const accounts = fs.existsSync(path.join(process.env.SILO_APP || path.join(root, '..', 'app'), 'lib', 'profiles.js'));
 
 const app = await electron.launch({
   executablePath: require(path.join(root, 'node_modules/electron')),
@@ -68,9 +68,9 @@ const closeEditors = async () => {
 async function editorFound() {
   // 패널이 편집 화면을 찾아 읽을 수 있는지 (교정하기 첫 단계와 같은 길)
   return panel.evaluate(async () => {
-    const all = (await chrome.tabs.query({})).filter((t) => /mypickebook\.org\/making\/make_book\.html/.test(t.url));
+    const all = (await siloPlatform.tabs.query({})).filter((t) => /mypickebook\.org\/making\/make_book\.html/.test(t.url));
     if (all.length !== 1) return 'editors=' + all.length;
-    const [r] = await chrome.scripting.executeScript({ target: { tabId: all[0].id }, world: 'MAIN', func: () => document.querySelector('#curr_page') ? 'ok' : 'no-editor', args: [] });
+    const [r] = await siloPlatform.scripting.executeScript({ target: { tabId: all[0].id }, world: 'MAIN', func: () => document.querySelector('#curr_page') ? 'ok' : 'no-editor', args: [] });
     return r.result;
   });
 }

@@ -2,12 +2,12 @@
 // 실제 책에서 나온 모양을 흉내 낸 입력으로, 프로그램 검사(AI 호출 없음)가 예상대로 동작하는지 본다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findLinks, putNoteAtMarker, removeNoteLine } from '../extension/lib/footnotes.js';
-import { alignHeadings, parseToc, coreTitle } from '../extension/lib/headings.js';
-import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from '../extension/lib/omission.js';
-import { parseVisualBlocks, buildEditorData } from '../extension/lib/visuals.js';
-import { applyRules } from '../extension/lib/rules.js';
-import { tidyMessage, sortReview, reviewCounts } from '../extension/lib/issues.js';
+import { findLinks, putNoteAtMarker, removeNoteLine } from '../app/lib/footnotes.js';
+import { alignHeadings, parseToc, coreTitle } from '../app/lib/headings.js';
+import { findOmissions, tooShort, suspiciousSpecial, repeatsPrevEnd } from '../app/lib/omission.js';
+import { parseVisualBlocks, buildEditorData } from '../app/lib/visuals.js';
+import { applyRules } from '../app/lib/rules.js';
+import { tidyMessage, sortReview, reviewCounts } from '../app/lib/issues.js';
 
 const rules = (t) => applyRules(t).text;
 
@@ -194,7 +194,7 @@ test('검수 요약: 빨강·노랑·끝 쪽 수', () => {
 });
 
 test('각주: 짝을 못 찾은 표시를 사실대로 (배정 범위 끝 / 범위 안인데 없음)', async () => {
-  const { markUnlinked } = await import('../extension/lib/footnotes.js');
+  const { markUnlinked } = await import('../app/lib/footnotes.js');
   const book = {
     pages: {
       10: { issues: [{ cls: 'review', text: '[주석] 각주2 설명이 다음 쪽에 있음 (자동 모드 끝에 이어 붙임)' }] },
@@ -213,7 +213,7 @@ test('각주: 짝을 못 찾은 표시를 사실대로 (배정 범위 끝 / 범�
 });
 
 test('화면 표시: 문자 코드를 읽을 수 있는 글자로 (한 번·두 번 인코딩 모두)', async () => {
-  const { displayText } = await import('../extension/lib/convert.js');
+  const { displayText } = await import('../app/lib/convert.js');
   assert.equal(displayText('그는 &#39;예&#39;라고 했다'), "그는 '예'라고 했다");
   assert.equal(displayText('&amp;#39;A&amp;quot;'), '\'A"');
   assert.equal(displayText('R&D와 &lt;표&gt;'), 'R&D와 <표>');
@@ -221,7 +221,7 @@ test('화면 표시: 문자 코드를 읽을 수 있는 글자로 (한 번·두 
 });
 
 test('사이트 글의 이름 문자 코드(&rdquo; 등)도 실제 글자로 읽음', async () => {
-  const { editorHtmlToText, displayText } = await import('../extension/lib/convert.js');
+  const { editorHtmlToText, displayText } = await import('../app/lib/convert.js');
   assert.equal(editorHtmlToText('<p>&ldquo;예&rdquo;&middot;&lsquo;아니&rsquo;&hellip;</p>'), '“예”·‘아니’…');
   assert.equal(displayText('&amp;rdquo;끝'), '”끝');
 });

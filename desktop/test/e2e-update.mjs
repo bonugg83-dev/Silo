@@ -52,7 +52,7 @@ assert.ok((await fake()).checks >= 1);
 console.log('✓ 새 버전을 받으면 위쪽 막대에 다시 시작 버튼');
 
 // 교정 중이면 다시 시작하지 않음
-await panel.evaluate(() => chrome.storage.session.set({ 'runlock:test': { owner: 'x', at: Date.now() } }));
+await panel.evaluate(() => siloPlatform.storage.session.set({ 'runlock:test': { owner: 'x', at: Date.now() } }));
 await bar.click('#update');
 await bar.waitForSelector('#toast:not([hidden])');
 assert.match(await bar.textContent('#toast'), /교정이 끝난 뒤/);
@@ -61,7 +61,7 @@ assert.equal((await fake()).installs.length, 0, '교정 중에는 설치하지 �
 console.log('✓ 교정 중에는 다시 시작하지 않고 안내');
 
 // 교정이 끝나면 조용히 설치하고 다시 켬
-await panel.evaluate(() => chrome.storage.session.remove('runlock:test'));
+await panel.evaluate(() => siloPlatform.storage.session.remove('runlock:test'));
 await bar.click('#update');
 await sleep(300);
 assert.deepEqual((await fake()).installs, [{ silent: true, runAfter: true }]);

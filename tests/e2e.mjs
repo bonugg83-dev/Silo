@@ -1,5 +1,6 @@
-// 확장 프로그램 전체 흐름 테스트: 모의 편집 화면 + 가짜 Claude 응답.
+// 앱 전체 흐름 테스트 (크롬에 올려서): 모의 편집 화면 + 가짜 Claude 응답.
 // 실행: node tests/e2e.mjs  (Playwright와 Chromium 필요)
+import { appForChrome, APP_DIR } from './harness.mjs';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { fakeFirebase } from './fake-firebase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
-const extPath = path.resolve(here, '../extension');
+const extPath = appForChrome(); // app/을 크롬에 올릴 수 있게 복사 (tests/harness.mjs)
 const mockHtml = fs.readFileSync(path.join(here, 'fixtures/mock_make_book.html'), 'utf8');
 const pageImg = fs.readFileSync(path.join(here, 'fixtures/page.jpg'));
 const originalImg = fs.readFileSync(path.join(here, 'fixtures/original.png'));

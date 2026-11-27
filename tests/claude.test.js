@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { callClaude, ClaudeError } from '../extension/lib/claude.js';
+import { callClaude, ClaudeError } from '../app/lib/claude.js';
 
 const okResponse = () => new Response(JSON.stringify({
   content: [{ type: 'text', text: '{"text":"ok"}' }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn',

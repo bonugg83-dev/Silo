@@ -2,7 +2,7 @@
 //   시작 모션(창 전체) → 회원가입 화면(창 전체, 위쪽 막대·사이트 숨김) → 가입하면 배치 A
 //   → 사람마다 마이픽 로그인 따로 → 로그아웃하면 다시 로그인 화면 → 다른 사람 가입/로그인 → 각자 키로 교정
 // 확장에 lib/profiles.js 가 없으면(계정 기능 전) 건너뜀.
-// 실행: SILO_EXT=<확장 폴더> xvfb-run -a node test/e2e-accounts.mjs
+// 실행: SILO_APP=<앱 폴더> xvfb-run -a node test/e2e-accounts.mjs
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const { _electron: electron } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
-const extDir = path.resolve(process.env.SILO_EXT || path.join(root, '..', 'extension'));
+const extDir = path.resolve(process.env.SILO_APP || path.join(root, '..', 'app'));
 if (!fs.existsSync(path.join(extDir, 'lib', 'profiles.js'))) {
   console.log('건너뜀: 이 확장에는 계정 기능(lib/profiles.js)이 없어요');
   process.exit(0);
@@ -27,7 +27,7 @@ const KEY_B = 'sk-ant-api03-BBBBKEY_abcdefghijklmnopqrstuvwxyz2222';
 const app = await electron.launch({
   executablePath: require(path.join(root, 'node_modules/electron')),
   args: [root, '--no-sandbox'],
-  env: { ...process.env, SILO_EXT: extDir, SILO_MOCK: path.join(here, 'mock-site.js'), SILO_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'silo-acc-')) },
+  env: { ...process.env, SILO_APP: extDir, SILO_MOCK: path.join(here, 'mock-site.js'), SILO_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'silo-acc-')) },
 });
 async function find(re, timeout = 10000) {
   for (let t = 0; t < timeout; t += 100) {
@@ -82,7 +82,7 @@ async function login(name) {
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'), null, { timeout: 15000 });
   await sleep(500);
 }
-const pid = () => panel.evaluate(async () => (await chrome.storage.local.get('activeProfileId')).activeProfileId);
+const pid = () => panel.evaluate(async () => (await siloPlatform.storage.local.get('activeProfileId')).activeProfileId);
 async function sitePage() {
   const id = await silo((s) => s.siteId());
   for (let t = 0; t < 5000; t += 100) {

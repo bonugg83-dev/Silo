@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyRules } from '../extension/lib/rules.js';
+import { applyRules } from '../app/lib/rules.js';
 
 const fix = (s, o) => applyRules(s, o).text;
 

@@ -6,8 +6,8 @@
 //   오른쪽   ─ 확장의 sidepanel.html 그대로 (가운데 막대를 끌어 폭 조절)
 //   검수를 열면 패널이 창 전체로 넓어짐 (시안 C)
 //
-// 확장 코드는 고치지 않는다. 확장이 쓰는 chrome.* 기능은 preload-shim.js 가 같은 이름으로
-// 흉내 내고, 실제 일은 이 파일(메인 프로세스)이 한다.
+// 앱 코드(../app)는 플랫폼 창구(app/lib/platform.js)로만 플랫폼에 부탁한다. 그 창구는 preload-shim.js 가
+// window.siloPlatform 으로 만들고, 실제 일은 이 파일(메인 프로세스)이 한다.
 const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, protocol, session, net, shell, clipboard, webContents: allWebContents } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -22,9 +22,10 @@ protocol.registerSchemesAsPrivileged([{
 if (process.env.SILO_USER_DATA) app.setPath('userData', process.env.SILO_USER_DATA);
 if (!process.env.SILO_MOCK && !app.requestSingleInstanceLock()) app.quit();
 
-// 확장 폴더: 개발 중에는 저장소의 ../extension, 빌드한 앱에서는 resources/extension
-const EXT_DIR = path.resolve(process.env.SILO_EXT
-  || (app.isPackaged ? path.join(process.resourcesPath, 'extension') : path.join(__dirname, '..', 'extension')));
+// 앱 폴더: 개발 중에는 저장소의 ../app, 빌드한 앱에서는 resources/silo-app
+// (resources/app 이라는 이름은 쓰면 안 됨: Electron이 app.asar 대신 그 폴더를 앱으로 읽음)
+const EXT_DIR = path.resolve(process.env.SILO_APP
+  || (app.isPackaged ? path.join(process.resourcesPath, 'silo-app') : path.join(__dirname, '..', 'app')));
 const UI_DIR = path.join(__dirname, 'ui');
 const SITE_HOME = 'https://www.mypickebook.org/';
 const APP_PARTITION = 'persist:silo'; // 패널, 위쪽 막대, 연습 페이지
@@ -65,11 +66,11 @@ function jsonFile(name, initial) {
     },
   };
 }
-const extStore = jsonFile('storage.json', {}); // chrome.storage.local 대신
+const extStore = jsonFile('storage.json', {}); // 플랫폼 창구 storage.local
 const prefs = jsonFile('desktop.json', { panelWidth: 420, bounds: null });
 
 // ---------- 프로필별 마이픽 로그인 ----------
-// 확장의 교정자 프로필 기능(A안)이 chrome.storage.local 의 "activeProfileId" 에 지금 고른 사람을 적으면,
+// 앱의 교정자 프로필 기능이 storage.local 의 "activeProfileId" 에 지금 고른 사람을 적으면,
 // 사이트 로그인(쿠키)도 그 사람 것으로 바꾼다. 확장 코드는 읽기만 한다.
 function activeProfileId(store) {
   const v = store.activeProfileId;
@@ -78,7 +79,7 @@ function activeProfileId(store) {
 const partitionFor = (profileId) => (profileId ? `persist:mypick-${profileId.replace(/[^A-Za-z0-9_-]/g, '_')}` : 'persist:mypick');
 let currentProfile = null;
 
-// ---------- chrome.storage.local / chrome.storage.session ----------
+// ---------- 플랫폼 창구: storage.local / storage.session ----------
 // local 은 파일(storage.json)에, session 은 메모리에만 (앱을 닫으면 사라짐: 풀린 키는 여기에만 둔다)
 let sessionStore = {};
 const areaData = (area) => (area === 'session' ? sessionStore : extStore.data);
@@ -119,7 +120,7 @@ ipcMain.handle('storage:clear', (_e, area) => {
 
 // ---------- 탭 = 사이트 화면, 사이트가 연 창(편집 화면), 연습 페이지 ----------
 const tabs = new Map();      // id -> webContents
-const shimmed = new Set();   // chrome.* 흉내를 받는 webContents (패널, 연습 페이지)
+const shimmed = new Set();   // 플랫폼 창구를 받는 webContents (패널, 테스트 화면)
 let win, barView, siteView, dividerView, panelView;
 let shimPrefs;
 
@@ -241,7 +242,7 @@ function openPracticeWindow(url) {
   return w.webContents;
 }
 ipcMain.handle('tabs:create', (_e, { url }) => {
-  // 확장이 새 탭을 여는 경우는 연습 페이지뿐 → chrome.* 흉내를 받는 별도 창
+  // 앱이 새 탭을 여는 경우는 테스트 화면뿐 → 플랫폼 창구를 받는 별도 창
   if (String(url).startsWith('silo:')) return tabInfo(openPracticeWindow(url));
   siteView.webContents.loadURL(url);
   return tabInfo(siteView.webContents);
@@ -258,7 +259,7 @@ ipcMain.handle('windows:update', (_e, id, props = {}) => {
   if (w && props.focused) { if (w.isMinimized()) w.restore(); w.focus(); }
 });
 
-// chrome.scripting.executeScript({ world: 'MAIN', func, args })
+// 플랫폼 창구 scripting.executeScript({ world: 'MAIN', func, args })
 // func 는 바깥 변수를 쓰지 않는 독립 함수(lib/page.js 규칙)라 소스 문자열로 넘겨 실행해도 같다
 ipcMain.handle('scripting:exec', async (_e, tabId, src, args) => {
   const wc = tabs.get(tabId);
@@ -267,7 +268,7 @@ ipcMain.handle('scripting:exec', async (_e, tabId, src, args) => {
   return [{ result, frameId: 0 }];
 });
 
-// chrome.runtime.sendMessage / onMessage (패널 ↔ 연습 페이지)
+// 플랫폼 창구 runtime.sendMessage / onMessage (패널 ↔ 테스트 화면)
 let msgSeq = 0;
 const pending = new Map();
 ipcMain.handle('runtime:send', (e, msg) => new Promise((resolve) => {

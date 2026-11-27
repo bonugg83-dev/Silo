@@ -1,9 +1,9 @@
 // 안내서·자료실 규칙: 기호 각주, 책 표지, 차례, 표 표시, 첨자 제작자 주
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyRules } from '../extension/lib/rules.js';
-import { fixPageKind, tableFlags, hasSubscriptNote, SUBSCRIPT_NOTE } from '../extension/lib/special.js';
-import { RESULT_SCHEMA, SYSTEM_PROMPT, buildWriteMessage } from '../extension/lib/prompt.js';
+import { applyRules } from '../app/lib/rules.js';
+import { fixPageKind, tableFlags, hasSubscriptNote, SUBSCRIPT_NOTE } from '../app/lib/special.js';
+import { RESULT_SCHEMA, SYSTEM_PROMPT, buildWriteMessage } from '../app/lib/prompt.js';
 
 const rules = (t) => applyRules(t).text;
 

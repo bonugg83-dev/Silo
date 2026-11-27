@@ -1,6 +1,7 @@
 // 연습 페이지: 마이픽 편집 화면(make_book.html)을 흉내 낸다.
 // 사이트로는 아무것도 보내지 않는다. 저장·그림 올리기·목차는 이 컴퓨터 안에서 흉내 낸다.
 // 도우미 패널은 실제 사이트에서 쓰는 함수(lib/page.js)를 이 페이지 안에서 그대로 실행한다.
+import platform from '../lib/platform.js';
 import {
   pageRead, pageFetchImage, pageFetchToc, pageFetchOriginal, pageUploadCrop, pageApply, pageSave, pageGoto,
 } from '../lib/page.js';
@@ -15,15 +16,15 @@ const K_DEADLINE = 'practice:deadline';
 async function loadSamples() {
   try {
     const m = await import('./samples/samples.js');
-    return m.SAMPLES.map((s) => ({ ...s, src: chrome.runtime.getURL(`practice/samples/${s.file}`) }));
+    return m.SAMPLES.map((s) => ({ ...s, src: platform.runtime.getURL(`practice/samples/${s.file}`) }));
   } catch {
     return []; // 예시 쪽이 없는 설치본
   }
 }
 
 const store = {
-  async get(key, def) { const r = await chrome.storage.local.get(key); return r[key] ?? def; },
-  async set(key, val) { await chrome.storage.local.set({ [key]: val }); },
+  async get(key, def) { const r = await platform.storage.local.get(key); return r[key] ?? def; },
+  async set(key, val) { await platform.storage.local.set({ [key]: val }); },
 };
 
 const params = new URLSearchParams(location.search);
@@ -248,8 +249,8 @@ function renderCustomList(samplesCount, custom) {
 $('btnReset').addEventListener('click', async () => {
   if (!confirm('테스트로 저장한 내용과 남은 시간, Silo가 기억한 테스트 책 기록을 지울까요? (넣은 쪽 이미지는 남아요)')) return;
   // 도우미의 책 기록은 계정마다 book:<계정 id>:<책 번호>
-  const books = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('book:') && k.endsWith(`:${BOOK_IDX}`));
-  await chrome.storage.local.remove([K_SAVED, K_DEADLINE, `book:${BOOK_IDX}`, ...books]);
+  const books = Object.keys(await platform.storage.local.get(null)).filter((k) => k.startsWith('book:') && k.endsWith(`:${BOOK_IDX}`));
+  await platform.storage.local.remove([K_SAVED, K_DEADLINE, `book:${BOOK_IDX}`, ...books]);
   goTo(1);
 });
 
@@ -281,8 +282,8 @@ async function init(first = true) {
 }
 
 // ---------- 도우미 패널과 연결 ----------
-const me = await chrome.tabs.getCurrent();
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+const me = await platform.tabs.getCurrent();
+platform.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.practiceCall !== true || msg.tabId !== me?.id) return undefined;
   const fn = FNS[msg.fn];
   if (!fn) { sendResponse({ ok: false, error: `알 수 없는 함수: ${msg.fn}` }); return undefined; }

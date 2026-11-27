@@ -1,4 +1,4 @@
-# Silo · 마이픽 전자도서 교정 도우미 (크롬 확장 프로그램)
+# Silo · 마이픽 전자도서 교정 도우미
 
 실로암시각장애인복지관 **마이픽 전자도서 제작** 편집 화면에서, 왼쪽 원본 이미지를 Claude가 직접 보고 오른쪽 OCR 텍스트를 「전자도서제작안내서」 규칙에 맞게 다시 작성해 주는 도우미입니다.
 
@@ -7,17 +7,11 @@
 - 시각자료, 주석, 애매한 제목 단계, 쪽 번호처럼 사람이 봐야 하는 것은 “확인할 것”에 표시합니다.
 - **“제출하기”(최종 제출)는 절대 누르지 않습니다.** 모든 쪽을 확인한 뒤 직접 눌러 주세요.
 
-> **데스크톱 앱(윈도)을 쓰세요.** [Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 한 번 설치하면, 그다음부터는 앱이 스스로 업데이트합니다. 자세한 내용은 [`desktop/README.md`](desktop/README.md)를 보세요. 아래 크롬 확장 설치는 더 이상 업데이트하지 않습니다.
+## 설치 (윈도 데스크톱 앱)
 
-## 설치 (처음 한 번)
+[Releases](https://github.com/bonugg83-dev/Silo/releases/latest)에서 `Silo-Setup-<버전>.exe`를 받아 한 번 설치하면, 그다음부터는 앱이 스스로 업데이트합니다. 자세한 내용은 [`desktop/README.md`](desktop/README.md)를 보세요. 태블릿(안드로이드) 앱은 준비 중입니다.
 
-1. 이 저장소를 내려받습니다. GitHub 페이지에서 **Code → Download ZIP** 을 누르고 압축을 풉니다.
-2. 크롬 주소창에 `chrome://extensions` 를 입력해 엽니다.
-3. 오른쪽 위 **개발자 모드**를 켭니다.
-4. **압축해제된 확장 프로그램을 로드합니다**를 누르고, 압축을 푼 폴더 안의 **`extension`** 폴더를 선택합니다.
-5. 크롬 툴바의 퍼즐 모양 아이콘을 누르고 “Silo” 옆 핀을 눌러 고정합니다.
-
-코드를 새로 내려받았을 때는 `chrome://extensions` 에서 이 확장 프로그램의 새로고침(↻) 버튼을 누르면 됩니다.
+크롬 확장 프로그램으로는 더 이상 배포하지 않습니다.
 
 ## 계정과 API 키
 
@@ -37,8 +31,8 @@ Silo는 **로그인해야 쓸 수 있어요.** 계정은 온라인(구글 Fireba
 
 ## 사용법
 
-1. 마이픽에서 평소처럼 편집 화면(팝업 창)을 엽니다.
-2. **원래 크롬 창**의 툴바에서 도우미 아이콘을 눌러 사이드 패널을 엽니다. 패널이 편집 화면을 알아서 찾습니다.
+1. Silo 앱 왼쪽의 마이픽에서 평소처럼 편집 화면을 엽니다(앱 안 왼쪽 칸에 열림).
+2. 오른쪽 Silo 패널이 편집 화면을 알아서 찾습니다.
 3. 맨 위 버튼 한 줄: **교정하기**(이 쪽), **자동 모드**(끝까지 진행, 도는 중엔 **멈추기**), **편집기에 넣기**(저장은 사이트 버튼으로).
 4. 작성 결과에서 빨간 칠은 꼭 확인할 곳, 노란 칠은 참고할 곳이고 마우스를 올리면 이유가 보입니다. 본문에 위치가 없는 것(쪽 번호 추정 등)은 쪽 번호 옆 점으로 표시됩니다. 그림은 `@@i` 자리에 작게 보이고, 누르면 영역을 고칠 수 있습니다.
 5. 아래 **[OCR] [수정] [목차]** 버튼으로 OCR과 달라진 곳, 고친 내용, 이 책 목차를 펼칩니다.
@@ -72,14 +66,15 @@ Silo는 **로그인해야 쓸 수 있어요.** 계정은 온라인(구글 Fireba
 ## 개발자용
 
 ```
-extension/
-  manifest.json        Manifest V3
-  background.js        아이콘 클릭 시 사이드 패널 열기
-  sidepanel.*          화면과 작업 흐름 (확인 모드 / 자동 모드)
+app/                   모든 플랫폼이 같이 쓰는 앱 (화면 + 로직)
+  sidepanel.*          패널 화면과 작업 흐름 (교정 / 자동 모드 / 검수)
+  lib/platform.js      플랫폼 창구: 앱이 플랫폼에 부탁하는 일(저장, 사이트 창, 편집 화면에서 함수 실행, 메시지)은 모두 여기로만
   lib/page.js          편집 화면(main world)에서 실행: 읽기, 이미지·목차 가져오기, 넣기, 저장
   lib/prompt.js        Claude 작업 지침(안내서 규칙 요약)과 응답 형식
   lib/claude.js        Messages API 호출
   lib/profiles.js      계정: 키 암호화, 계정별 저장 키, 자동 로그아웃·월 한도
+  lib/cloud.js         온라인 계정·비용·모두의 피드백 (Firebase)
+  lib/costs.js         설정 옵션별 예상 비용
   lib/rules.js         결정적 규칙 검사기
   lib/diff.js          OCR 비교
   lib/convert.js       편집기 데이터(줄마다 <br>) 변환, 이미지 축소
@@ -87,15 +82,19 @@ extension/
   lib/fixes.js         2차 검증 수정 적용
   lib/footnotes.js     다른 쪽에 걸친 각주 잇기
   practice/            테스트 화면 (마이픽 편집 화면 흉내, 테스트 묶음 가져오기)
+desktop/               윈도·맥 앱 (Electron): preload-shim.js 가 플랫폼 창구를 만들고 main.js 가 실제 일을 함
 tests/
-  *.test.js            규칙 검사기·시각자료·수정 적용 테스트:  npm test
-  e2e.mjs              모의 편집 화면 + 가짜 API로 전체 흐름 테스트:  npm run e2e (Playwright 필요)
+  *.test.js            로직 단위 테스트:  npm test
+  e2e*.mjs             app/을 크롬에 올려 하는 브라우저 흐름 테스트:  npm run e2e (Playwright 필요)
+  harness.mjs          그 브라우저 테스트용으로 app/을 복사하고 테스트 전용 매니페스트를 붙임 (배포하지 않음)
 ```
+
+새 플랫폼을 붙일 때는 `app/lib/platform.js` 맨 위에 적힌 기능만 `window.siloPlatform` 으로 만들어 주면 됩니다.
 
 편집 화면 연결: 편집기는 CKEditor 4 `CKEDITOR.instances.content`, 내용은 줄마다 `<br>`. 원본 이미지 `#book_img`, 쪽 번호 `#page_num`, 번호 없음 `#none_page`, 작업 쪽 `#curr_page`, 제작 Tip `.makeTip`, 남은 시간 `.time`. 시각자료는 사이트의 이미지 자르기 창과 같은 방식으로 `/module/book/cropbox_upload_proc.php`에 올리고 `<figure class="image">`로 넣습니다. 저장은 사이트의 `saveGo('temp')`, `saveGo('next')`만 호출하며 `saveGo('complete')`(최종 제출)는 호출하지 않습니다. 사이트는 내용에 `&lt;`, `&gt;`, `chrome-extension`, `<script>` 가 있으면 저장을 거부하므로 넣기 전에 검사합니다.
 
 ## 로고와 시작 모션
 
 - 이름 **Silo**는 실로암(히브리어 실로아흐, ‘보냄을 받은 것, 보내진 물’)에서 왔습니다.
-- 로고 글꼴은 Libre Caslon Text Bold(SIL Open Font License, `extension/fonts/OFL.txt`)이고, i의 점만 파란색입니다.
+- 로고 글꼴은 Libre Caslon Text Bold(SIL Open Font License, `app/fonts/OFL.txt`)이고, i의 점만 파란색입니다.
 - 하루 처음 패널을 열 때 시작 모션(물방울 → 물결 → 로고가 왼쪽 위로)이 약 3초 나옵니다. 화면을 누르면 건너뜁니다. 움직임 줄이기 설정이면 나오지 않습니다.

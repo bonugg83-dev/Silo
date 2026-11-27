@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCloud, idEmail, authPassword, toFields, fromFields, pickSettings, pickProfile, monthFromDoc, OfflineError } from '../extension/lib/cloud.js';
+import { createCloud, idEmail, authPassword, toFields, fromFields, pickSettings, pickProfile, monthFromDoc, OfflineError } from '../app/lib/cloud.js';
 
 test('아이디는 대소문자 상관없이 같은 내부 이메일, 한글도 됨', async () => {
   assert.equal(await idEmail(' Kim '), await idEmail('kim'));
