@@ -71,7 +71,7 @@ export function fromValue(v) {
 export const fromFields = (f) => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, fromValue(v)]));
 
 /** 계정 문서에 올리는 칸 (책 진행·풀린 키는 절대 넣지 않음) */
-export const PROFILE_FIELDS = ['name', 'color', 'enc', 'mask', 'lockAfterMin', 'monthlyLimit', 'createdAt'];
+export const PROFILE_FIELDS = ['name', 'color', 'enc', 'mask', 'genc', 'gmask', 'lockAfterMin', 'monthlyLimit', 'createdAt']; // genc·gmask: Gemini 키(잠금)
 export const pickProfile = (p) => Object.fromEntries(PROFILE_FIELDS.filter((k) => p[k] !== undefined).map((k) => [k, p[k]]));
 /** 설정 중 올리는 것 (예전 평문 키 목록은 절대 올리지 않음) */
 export const pickSettings = (s) => { const { keys, apiKey, activeKeyId, ...rest } = s || {}; return rest; };
@@ -158,14 +158,23 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
       const d = await getDoc(s, '');
       return d && { profile: pickProfile(d), settings: d.settings ? safeParse(d.settings) : null };
     },
-    saveProfile: (s, p) => patch(s, '', pickProfile(p)),
+    async saveProfile(s, p) {
+      const { genc, gmask, ...base } = pickProfile(p);
+      await patch(s, '', base);
+      // Gemini 키는 따로 (서버가 이 칸을 받지 않아도 나머지 저장은 되게)
+      if (genc !== undefined || gmask !== undefined) {
+        await patch(s, '', { genc: genc || '', gmask: gmask || '' }).catch((e) => console.warn('Gemini 키 온라인 저장 실패', e));
+      }
+    },
     saveSettings: (s, settings) => patch(s, '', { settings: JSON.stringify(pickSettings(settings)) }),
     /** 비밀번호 바꾸기 (로그인 비밀번호와 키 잠금을 같이) */
-    async changePassword(s, { id, password, enc }) {
+    async changePassword(s, { id, password, enc, genc }) {
       await fresh(s);
       const r = await auth('update', { idToken: s.idToken, password: await authPassword(id, password), returnSecureToken: true });
       Object.assign(s, toSession({ ...r, localId: s.uid }));
       await patch(s, '', { enc });
+      // Gemini 키는 따로 (서버가 이 칸을 받지 않아도 비밀번호 바꾸기는 끝나게)
+      if (genc) await patch(s, '', { genc }).catch((e) => console.warn('Gemini 키 온라인 저장 실패', e));
     },
     /** 비용 더하기: 여러 컴퓨터에서 동시에 더해도 안 섞이게 서버에서 더한다 */
     async addCost(s, { usd = 0, pages = 0, day }) {

@@ -284,7 +284,7 @@ ipcMain.handle('runtime:send', (e, msg) => new Promise((resolve) => {
 }));
 ipcMain.on('runtime:response', (_e, id, r) => pending.get(id)?.(r));
 // Claude API와 온라인 계정(Firebase) 주소만 앱 본체가 대신 보낸다
-const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com)\//;
+const API_HOSTS = /^https:\/\/(api\.anthropic\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firestore\.googleapis\.com|generativelanguage\.googleapis\.com)\//;
 // Claude API: 패널 대신 앱 본체가 보낸다 (preload-shim.js 의 fetch 참고)
 const apiCalls = new Map();
 const netLog = [];

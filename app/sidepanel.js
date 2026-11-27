@@ -22,6 +22,7 @@ import {
 } from './lib/visuals.js';
 import { staleBookKeys } from './lib/cleanup.js';
 import { optionCosts, costLabel } from './lib/costs.js';
+import { isGemini, isGeminiKey } from './lib/gemini.js';
 import { playSplash } from './lib/splash.js';
 import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
@@ -99,9 +100,10 @@ function ask({ title, body = '', ok = '확인', danger = false }) {
 }
 // ---------- 교정자 프로필 (lib/profiles.js) ----------
 let profiles = []; // platform.storage.local "profiles"
-let unlocked = null; // {pid, key, lastUsed} (platform.storage.session "unlock")
+let unlocked = null; // {pid, key, gkey, lastUsed} (platform.storage.session "unlock"). gkey: Gemini 키 (넣었으면)
 let runPid = ''; // 교정이 도는 동안 고정한 프로필과 키
 let runKey = '';
+let runGKey = '';
 const PANEL_ID = crypto.randomUUID();
 
 const pid = () => runPid || unlocked?.pid || '';
@@ -134,8 +136,8 @@ async function setLockState(on) {
     : { lockState: { pid: (await platform.storage.local.get('activeProfileId')).activeProfileId || '', unlocked: false, at: Date.now() } };
   await platform.storage.local.set(st);
 }
-async function openProfile(p, apiKey, ses = null) {
-  unlocked = { pid: p.id, key: apiKey, lastUsed: Date.now() };
+async function openProfile(p, apiKey, ses = null, gkey = '') {
+  unlocked = { pid: p.id, key: apiKey, gkey, lastUsed: Date.now() };
   cloudSes = ses ? { ...ses, pid: p.id } : null;
   await platform.storage.session.set({ unlock: unlocked, cloud: cloudSes });
   await setLockState(true);
@@ -268,7 +270,7 @@ async function login() {
       if (!local) { $('gateMsg').textContent = `${NEED_NET} (이 컴퓨터에서 처음 로그인하는 아이디예요)`; return; }
       const k = await decryptKey(local.enc, pw);
       if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
-      await openProfile(local, k);
+      await openProfile(local, k, null, local.genc ? (await decryptKey(local.genc, pw)) || '' : '');
       msg('settingsMsg', '인터넷이 안 돼서 이 컴퓨터에 남은 기록으로 들어왔어요.');
       return;
     }
@@ -287,7 +289,9 @@ async function login() {
     settings = { ...settings, ...r.settings, keys: settings.keys };
     await platform.storage.local.set({ settings });
   }
-  await openProfile(p, k, r.session);
+  // Gemini 키도 같은 비밀번호로 잠가 두었으면 같이 풂 (없으면 Claude 모델만)
+  const gk = p.genc ? (await decryptKey(p.genc, pw)) || '' : '';
+  await openProfile(p, k, r.session, gk);
 }
 /** 예전에 이 컴퓨터에만 만든 계정: 비밀번호가 맞으면 가입 코드를 받아 온라인으로 옮김 */
 async function moveOnline(p, pw) {
@@ -459,7 +463,10 @@ async function persist() {
   await platform.storage.local.set({ settings });
   if (me()?.uid) quietly((s) => cloud.saveSettings(s, settings));
 }
+const needKeyMsg = () => (unlocked && isGemini(settings.model) ? '설정 → 내 계정에서 Gemini 키를 넣어 주세요. (또는 AI 모델을 Claude로)' : '로그인해 주세요.');
+/** 지금 고른 모델에 맞는 키 (Gemini 모델이면 Gemini 키) */
 function activeKey() {
+  if (isGemini(settings.model)) return runGKey || unlocked?.gkey || '';
   return runKey || unlocked?.key || '';
 }
 
@@ -470,6 +477,9 @@ function renderMe() {
   $('meName').textContent = p.name;
   $('meSub').textContent = '로그인 중';
   $('meKey').textContent = p.mask;
+  $('meGKey').textContent = p.gmask || '없음';
+  $('btnSetGKey').textContent = p.gmask ? '키 바꾸기' : '키 넣기';
+  $('btnDelGKey').classList.toggle('hidden', !p.gmask);
   $('monthlyLimit').value = p.monthlyLimit || '';
   const sel = $('lockAfter');
   if (!sel.options.length) for (const o of LOCK_OPTIONS) sel.add(new Option(o.label, String(o.min)));
@@ -497,6 +507,35 @@ async function changeKey() {
   renderMe();
   msg('settingsMsg', '키를 바꿨어요.');
 }
+/** Gemini 키 넣기·바꾸기: Claude 키처럼 로그인 비밀번호로 잠가 저장 (온라인 계정에도) */
+async function setGeminiKey() {
+  const p = me();
+  const gk = $('newGKey').value.trim();
+  if (!isGeminiKey(gk)) { msg('settingsMsg', 'Gemini 키 형식이 아니에요. AIza 로 시작하는 키를 붙여 넣어 주세요.'); return; }
+  const pw = $('gKeyPw').value;
+  if (!(await decryptKey(p.enc, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  p.genc = await encryptKey(gk, pw);
+  p.gmask = maskKey(gk);
+  await saveProfiles();
+  unlocked.gkey = gk;
+  await platform.storage.session.set({ unlock: unlocked });
+  $('newGKey').value = '';
+  $('gKeyPw').value = '';
+  toggleBox('gKeyBox', 'btnSetGKey', false);
+  renderMe();
+  msg('settingsMsg', 'Gemini 키를 넣었어요. AI 모델에서 Gemini를 고르면 써요.');
+}
+async function deleteGeminiKey() {
+  const p = me();
+  if (!(await ask({ title: 'Gemini 키를 지울까요?', body: '지우면 Gemini 모델로 교정할 수 없어요.', ok: '지우기', danger: true }))) return;
+  p.genc = '';
+  p.gmask = '';
+  await saveProfiles();
+  unlocked.gkey = '';
+  await platform.storage.session.set({ unlock: unlocked });
+  renderMe();
+  msg('settingsMsg', 'Gemini 키를 지웠어요.');
+}
 async function changePassword() {
   const p = me();
   const k = await decryptKey(p.enc, $('oldPw').value);
@@ -504,11 +543,14 @@ async function changePassword() {
   const bad = checkPassword($('newPw').value, $('newPw2').value);
   if (bad) { msg('settingsMsg', bad); return; }
   const encNew = await encryptKey(k, $('newPw').value);
+  // Gemini 키도 새 비밀번호로 다시 잠금
+  const gk = p.genc ? await decryptKey(p.genc, $('oldPw').value) : '';
+  const gencNew = gk ? await encryptKey(gk, $('newPw').value) : '';
   if (p.uid) {
     // 온라인 계정은 서버 비밀번호도 같이 바꿔야 함 (인터넷 필요)
     if (!online()) { msg('settingsMsg', '비밀번호를 바꾸려면 인터넷이 될 때 다시 로그인해 주세요.'); return; }
     try {
-      await cloud.changePassword(online(), { id: p.name, password: $('newPw').value, enc: encNew });
+      await cloud.changePassword(online(), { id: p.name, password: $('newPw').value, enc: encNew, genc: gencNew || undefined });
       await keepSession();
     } catch (e) {
       msg('settingsMsg', e instanceof OfflineError ? NEED_NET : e.message);
@@ -516,6 +558,7 @@ async function changePassword() {
     }
   }
   p.enc = encNew;
+  if (gencNew) p.genc = gencNew;
   await saveProfiles();
   for (const id of ['oldPw', 'newPw', 'newPw2']) $(id).value = '';
   toggleBox('changePwBox', 'btnChangePw', false);
@@ -950,7 +993,7 @@ async function analyze() {
   setError('');
   if (reviewOpen()) await showReview(false);
   const tab = await getEditorTab();
-  if (!activeKey()) throw new Error('로그인해 주세요.');
+  if (!activeKey()) throw new Error(needKeyMsg());
   abort = new AbortController();
   if (editing) setEditMode(false);
   setProgress('');
@@ -1632,7 +1675,7 @@ async function autoLoop() {
   // 시작 전에 목차부터 (없으면 제목 단계가 틀리기 쉬움)
   const st0 = await refreshStatus();
   if (!st0) throw new Error(lastStatusError || '편집 화면을 찾지 못했어요.');
-  if (!activeKey()) throw new Error('로그인해 주세요.');
+  if (!activeKey()) throw new Error(needKeyMsg());
   if (settings.useToc) {
     abort = new AbortController();
     const book0 = await getBook(st0.info.bookIdx);
@@ -1703,6 +1746,7 @@ async function startRun() {
   }))) return;
   runPid = unlocked.pid;
   runKey = unlocked.key;
+  runGKey = unlocked.gkey || '';
   const beat = () => platform.storage.session.set({ [lockKey]: { owner: PANEL_ID, at: Date.now() } });
   await beat();
   const beatTimer = setInterval(() => { beat(); touch(); }, 20000);
@@ -1727,6 +1771,7 @@ async function startRun() {
     if (unlocked) { unlocked.lastUsed = Date.now(); platform.storage.session.set({ unlock: unlocked }); }
     runPid = '';
     runKey = '';
+    runGKey = '';
     running = false;
     autoRunning = false;
     stopReq = false;
@@ -1841,6 +1886,10 @@ $('btnAdvanced').addEventListener('click', () => {
   $('btnAdvanced').setAttribute('aria-expanded', String(on));
 });
 $('btnChangeKey').addEventListener('click', () => toggleBox('changeKeyBox', 'btnChangeKey'));
+$('btnSetGKey').addEventListener('click', () => toggleBox('gKeyBox', 'btnSetGKey'));
+$('btnSaveGKey').addEventListener('click', setGeminiKey);
+$('gKeyPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') setGeminiKey(); });
+$('btnDelGKey').addEventListener('click', deleteGeminiKey);
 $('btnSaveKey').addEventListener('click', changeKey);
 $('changeKeyPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') changeKey(); });
 $('btnChangePw').addEventListener('click', () => toggleBox('changePwBox', 'btnChangePw'));
@@ -1881,7 +1930,12 @@ platform.storage.onChanged.addListener((ch, area) => {
   unlocked = u && profiles.some((p) => p.id === u.pid) ? u : null;
   if (unlocked) { showGate(false); fillForms(); showTodayCost(); } else if (!running) { setSettingsOpen(false); showGate(true); }
 });
-$('model').addEventListener('change', async () => { settings.model = $('model').value; await persist(); showOptionCosts(); msg('settingsMsg', '모델을 바꿨어요.'); });
+$('model').addEventListener('change', async () => {
+  settings.model = $('model').value;
+  await persist();
+  showOptionCosts();
+  msg('settingsMsg', isGemini(settings.model) && !unlocked?.gkey ? '모델을 바꿨어요. 이 모델은 Gemini 키가 있어야 해요. 위 내 계정에서 넣어 주세요.' : '모델을 바꿨어요.');
+});
 
 async function editorBook() {
   const tab = await getEditorTab();
@@ -1905,7 +1959,7 @@ async function rebuildToc() {
   await putBook(info.bookIdx, book);
   $('tocText').value = '';
   showTocState(book);
-  if (!activeKey()) throw new Error('로그인해 주세요.');
+  if (!activeKey()) throw new Error(needKeyMsg());
   abort = new AbortController();
   const tab = await getEditorTab();
   await ensureToc(tab, info, book, abort.signal);
