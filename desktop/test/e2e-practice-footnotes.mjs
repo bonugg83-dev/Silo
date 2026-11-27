@@ -80,6 +80,11 @@ console.log('끝 안내:', JSON.stringify(progress), '오류:', JSON.stringify(e
 const saved = (await panel.evaluate(() => siloPlatform.storage.local.get('practice:saved')))['practice:saved'] || {};
 const links = await panel.evaluate(async () => Object.entries(await siloPlatform.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => v.links));
 console.log('연결:', JSON.stringify(links));
+const issues = await panel.evaluate(async () => Object.entries(await siloPlatform.storage.local.get(null)).filter(([k]) => /^book:/.test(k)).map(([, v]) => ({ 3: v.pages[3]?.issues, 4: v.pages[4]?.issues })));
+// 옮긴 뒤에는 검수 목록에서 "이어 붙임 / 앞쪽으로 옮김" 항목이 사라짐
+for (const [p, list] of Object.entries(issues[0])) {
+  assert.ok(!(list || []).some((x) => /각주\*\*\*/.test(x.text)), `${p}쪽 검수 항목에 각주가 남음: ${JSON.stringify(list)}`);
+}
 console.log('3쪽:', JSON.stringify(saved['3']?.content), '\n4쪽:', JSON.stringify(saved['4']?.content));
 assert.deepEqual(errors, []);
 assert.match(progress, /쪽을 넘는 각주 1개도 이었어요/);
