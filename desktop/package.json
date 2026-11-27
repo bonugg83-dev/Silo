@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/e2e.mjs && node test/e2e-accounts.mjs && node test/e2e-popups.mjs && node test/e2e-update.mjs && node test/e2e-testpack.mjs && node test/e2e-feedback.mjs",
+    "test": "node test/e2e.mjs && node test/e2e-accounts.mjs && node test/e2e-popups.mjs && node test/e2e-update.mjs && node test/e2e-testpack.mjs && node test/e2e-feedback.mjs && node test/e2e-footnotes.mjs",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "release:win": "electron-builder --win --publish always"
