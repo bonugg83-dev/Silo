@@ -182,7 +182,7 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
       await fresh(s);
       const r = await auth('update', { idToken: s.idToken, password: await authPassword(id, password), returnSecureToken: true });
       Object.assign(s, toSession({ ...r, localId: s.uid }));
-      await patch(s, '', { enc });
+      if (enc) await patch(s, '', { enc }); // Gemini 키만 있는 계정은 Claude 키 칸이 없음
       // Gemini 키는 따로 (서버가 이 칸을 받지 않아도 비밀번호 바꾸기는 끝나게)
       if (genc) await patch(s, '', { genc }).catch((e) => console.warn('Gemini 키 온라인 저장 실패', e));
     },
