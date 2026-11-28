@@ -30,7 +30,12 @@ export function fakeFirebase(code = 'TESTCODE', saved = null) {
       if (!uid) return err(400, 'INVALID_ID_TOKEN');
       const email = [...users].find(([, x]) => x.uid === uid)?.[0];
       if (op === 'delete') { users.delete(email); return { status: 200, body: {} }; }
-      if (op === 'update') { users.get(email).password = body.password; return { status: 200, body: issue(uid) }; }
+      if (op === 'update') {
+        const x = users.get(email);
+        if (body.password) x.password = body.password;
+        if (body.displayName !== undefined) x.displayName = body.displayName;
+        return { status: 200, body: body.returnSecureToken === false ? { localId: uid, displayName: x.displayName } : issue(uid) };
+      }
     }
     if (u.host === 'securetoken.googleapis.com') {
       const t = new URLSearchParams(body).get('refresh_token').slice(1);

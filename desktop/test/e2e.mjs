@@ -76,8 +76,8 @@ const KEY = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
 const accounts = fs.existsSync(path.join(process.env.SILO_APP || path.join(root, '..', 'app'), 'lib', 'profiles.js'));
 if (accounts) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
-  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김: 그 전에 다른 칸을 채우면 글자가 이름 칸으로 감
-  await panel.fill('#newName', 'tester');
+  if (await panel.isVisible('#toSignup')) await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김: 그 전에 다른 칸을 채우면 글자가 이름 칸으로 감
+  await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', 'tester');
   await panel.fill('#newPw1', 'abcd');
   await panel.fill('#newPw1b', 'abcd');
   await panel.fill('#newKey', KEY);

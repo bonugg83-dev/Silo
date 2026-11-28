@@ -41,8 +41,8 @@ async function until(f, why, timeout = 20000) {
 async function signup(name) {
   await panel.waitForFunction(() => document.body.classList.contains('auth-open') && !document.body.classList.contains('splashing'), null, { timeout: 20000 });
   if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
-  await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {});
-  await panel.fill('#newName', name); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
+  await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {});
+  await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', name); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
   if (await panel.isVisible('#newKey')) await panel.fill('#newKey', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
   await panel.fill('#newCode', 'TESTCODE');
   await panel.click('#btnSignup');
