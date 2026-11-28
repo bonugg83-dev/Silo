@@ -342,7 +342,6 @@ for (const id of ['btnApplySave', 'btnApplyNext', 'pageStatus', 'timeWarn', 'vis
 
 // 6. 자동 모드: 151 → 152 → 153(마지막, 그림 자동 넣기)까지 멈추지 않음
 await panel.click('#btnOpenSettings');
-await panel.click('#btnAdvanced');
 assert.ok(await panel.isChecked('#pacing'), '기본으로 켜짐');
 assert.equal(await panel.inputValue('#paceMinSec'), '60');
 assert.equal(await panel.inputValue('#paceMaxSec'), '90');
@@ -486,7 +485,6 @@ assert.equal(await panel.locator('#dashSpacing').count(), 0, '줄표 설정 없�
 assert.equal(await panel.getAttribute('#monthlyLimit', 'placeholder'), '한도 없음');
 assert.ok(!(await panel.textContent('#settings, body')).includes('0은 없음'));
 assert.equal(await panel.isChecked('#verifyFull'), false, '원본 전체 다시 보기 기본 꺼짐');
-if (await panel.getAttribute('#btnAdvanced', 'aria-expanded') !== 'true') await panel.click('#btnAdvanced');
 await panel.waitForTimeout(500);
 assert.ok(await panel.evaluate(() => document.querySelector('#paceBox').classList.contains('open')));
 await panel.click('label:has(#pacing)');
@@ -518,7 +516,7 @@ const sb = await panel.locator('#settings').boundingBox();
 assert.ok(Math.abs(sb.x) < 2, '설정 열림');
 // 관리자 피드백: 교정할 때 이미 한 번 가져왔고(12시간에 한 번), 지침에 들어감. 가져오기 버튼은 바뀐 것만 다시 읽음
 assert.ok(feedbackFetches.includes('?idx=319679'), '피드백 팝업을 읽음');
-assert.match(await panel.textContent('#feedbackInfo'), /내 피드백 2건 · 모두의 피드백 2가지/);
+assert.match(await panel.textContent('#feedbackInfo'), /내 피드백 2건 · 모두에게 해당 2건/);
 assert.ok(apiCalls.some((c) => /<admin_feedback>[\s\S]*기호로 된 각주는/.test(c.body.system?.[1]?.text || '')), '피드백이 교정 지침에 들어감');
 const fetchedBefore = feedbackFetches.length;
 await panel.click('#btnFeedback');

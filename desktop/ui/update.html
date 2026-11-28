@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' silo:; img-src data:; style-src 'self' 'unsafe-inline' silo:; script-src 'self' silo:; font-src silo:">
+<title>Silo 업데이트</title>
+<link rel="stylesheet" href="update.css">
+</head>
+<body>
+<!-- 새 버전 안내: 앱 전체를 흐리게 덮고 가운데에 띄움 (뒤 화면은 띄우기 직전에 찍은 사진) -->
+<div class="shots" id="shots" aria-hidden="true"></div>
+<div class="dim" aria-hidden="true"></div>
+<div class="card" role="dialog" aria-modal="true" aria-labelledby="title" aria-describedby="desc">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+  <h1 id="title">새 버전이 준비됐어요</h1>
+  <p class="ver"><span id="from"></span> → <b id="to"></b></p>
+  <p id="desc">업데이트하면 앱이 잠깐 꺼졌다가 새 버전으로 다시 켜져요. 작업 기록은 그대로 남아요.</p>
+  <div class="btns">
+    <button type="button" id="later" class="pill">다음에 하기</button>
+    <button type="button" id="now" class="pill white">확인</button>
+  </div>
+  <p class="foot">다음에 하기를 누르면 앱을 닫을 때 설치돼요.</p>
+</div>
+<script src="update.js"></script>
+</body>
+</html>

@@ -83,14 +83,13 @@
       <span>설정</span>
       <button type="button" id="btnCloseSettings" class="icon" aria-label="작업으로 돌아가기"><svg viewBox="0 0 24 24"><path d="M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z"/></svg></button>
     </div>
-    <span class="lbl">내 계정</span>
-    <div class="me">
-      <span id="meAvatar" class="avatar" aria-hidden="true"></span>
-      <span class="me-txt"><span id="meName" class="me-name"></span><span id="meSub" class="note"></span></span>
-      <button type="button" id="btnLogout" class="pill sm">로그아웃</button>
-    </div>
+    <!-- ① 교정: 모델 · 그 모델의 키 · 쪽당 비용 · 품질 옵션 -->
+    <h3 class="sec-h">교정</h3>
+    <label class="fld-t" for="model">AI 모델</label>
+    <select id="model"></select>
+    <div class="note cost-total" id="costTotal" aria-live="polite"></div>
     <div class="key-card">
-      <span class="dot-ok" aria-hidden="true"></span>
+      <span class="key-name">Claude</span>
       <span id="meKey" class="mono"></span>
       <button type="button" id="btnChangeKey" class="pill sm">키 바꾸기</button>
     </div>
@@ -100,7 +99,7 @@
       <div class="r"><button type="button" id="btnSaveKey" class="pill">키 바꾸기</button></div>
     </div></div>
     <div class="key-card">
-      <span class="note">Gemini</span>
+      <span class="key-name">Gemini</span>
       <span id="meGKey" class="mono"></span>
       <button type="button" id="btnSetGKey" class="pill sm">키 넣기</button>
       <button type="button" id="btnDelGKey" class="pill sm hidden">지우기</button>
@@ -111,56 +110,59 @@
       <p class="note">구글 AI Studio에서 받은 키예요. AI 모델에서 Gemini를 고르면 이 키로 교정해요. 로그인 비밀번호로 잠가 저장해요.</p>
       <div class="r"><button type="button" id="btnSaveGKey" class="pill">Gemini 키 넣기</button></div>
     </div></div>
+    <label class="opt"><span class="opt-t">2차 검증<span class="hint" id="costVerify"></span></span><input type="checkbox" id="verify" class="tg"></label>
+    <label class="opt dep"><span class="opt-t">원본 전체 다시 보기<span class="hint" id="costFull"></span></span><input type="checkbox" id="verifyFull" class="tg"></label>
+    <label class="opt"><span class="opt-t">필요한 쪽만 확대 이미지로 다시 보기<span class="hint" id="costZoom"></span></span><input type="checkbox" id="zoom" class="tg"></label>
 
-    <span class="lbl">쓴 비용</span>
+    <!-- ② 작업: 자동 모드가 어떻게 움직이는지 -->
+    <h3 class="sec-h">작업</h3>
+    <label class="opt"><span class="opt-t">시각자료 자동으로 잘라 넣기<span class="hint">그림·표 자리를 원본에서 잘라 편집기에 같이 넣어요</span></span><input type="checkbox" id="autoVisuals" class="tg"></label>
+    <label class="opt"><span class="opt-t">쪽 넘김 간격<span class="hint">자동 모드가 쪽마다 기다렸다 넘어가요 (끄면 2~5초)</span></span><input type="checkbox" id="pacing" class="tg"></label>
+    <div id="paceBox" class="adv"><div class="adv-in">
+      <div class="opt sub">
+        <span class="note">쪽마다 기다리는 시간</span>
+        <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
+      </div>
+    </div></div>
+
+    <!-- ③ 비용 -->
+    <h3 class="sec-h">비용</h3>
     <div class="cost-grid">
       <div class="cost-cell"><span class="note">오늘</span><b id="costToday">$0.00</b><span id="costTodayWon" class="note"></span></div>
       <div class="cost-cell"><span class="note">이번 달</span><b id="costMonth">$0.00</b><span id="costMonthWon" class="note"></span></div>
     </div>
     <div id="limitBar" class="limit hidden"><span id="limitFill"></span></div>
-    <label class="opt">이번 달 한도 ($)<input type="number" id="monthlyLimit" class="num wide" min="0" step="5" placeholder="한도 없음"></label>
     <div id="todayCost" class="note"></div>
+    <label class="opt"><span class="opt-t">이번 달 한도<span class="hint">넘으면 자동 모드가 그 쪽까지만 하고 멈춰요</span></span><span class="r gap6">$<input type="number" id="monthlyLimit" class="num wide" min="0" step="5" placeholder="한도 없음"></span></label>
 
-    <span class="lbl">로그인</span>
-    <label class="opt">안 쓰면 자동 로그아웃<select id="lockAfter" class="sm"></select></label>
-    <div class="r"><button type="button" id="btnChangePw" class="pill sm">비밀번호 바꾸기</button></div>
+    <!-- ④ 계정 -->
+    <h3 class="sec-h">계정</h3>
+    <div class="me">
+      <span id="meAvatar" class="avatar" aria-hidden="true"></span>
+      <span class="me-txt"><span id="meName" class="me-name"></span><span id="meSub" class="note"></span></span>
+      <button type="button" id="btnChangePw" class="pill sm">비밀번호 바꾸기</button>
+    </div>
     <div id="changePwBox" class="adv"><div class="adv-in">
       <input type="password" id="oldPw" placeholder="지금 비밀번호" autocomplete="current-password" aria-label="지금 비밀번호">
       <input type="password" id="newPw" placeholder="새 비밀번호" autocomplete="new-password" aria-label="새 비밀번호">
       <input type="password" id="newPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
       <div class="r"><button type="button" id="btnSavePw" class="pill">비밀번호 바꾸기</button></div>
     </div></div>
-    <div id="settingsMsg" class="note"></div>
-
-    <span class="lbl">관리자 피드백</span>
-    <div class="r sb">
-      <span id="feedbackInfo" class="note"></span>
+    <label class="opt">안 쓰면 자동 로그아웃<select id="lockAfter" class="sm"></select></label>
+    <div class="opt static">
+      <span class="opt-t">관리자 피드백<span class="hint" id="feedbackInfo"></span></span>
       <button type="button" id="btnFeedback" class="pill sm">가져오기</button>
     </div>
 
-    <span class="lbl">AI 모델</span>
-    <select id="model"></select>
-
-    <div class="r sb">
-      <button type="button" id="btnPractice2" class="pill">테스트</button>
-      <button type="button" id="btnAdvanced" class="tri" aria-expanded="false">상세 설정<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4h8l-4 5z"/></svg></button>
+    <!-- 위험 구역: 맨 아래 따로 -->
+    <div class="danger-zone">
+      <button type="button" id="btnLogout" class="pill sm">로그아웃</button>
+      <button type="button" id="btnDeleteProfile" class="pill sm danger">이 계정 지우기</button>
     </div>
-    <div id="advancedBox" class="adv"><div class="adv-in">
-      <div class="note cost-total" id="costTotal" aria-live="polite"></div>
-      <label class="opt"><span class="opt-t">2차 검증<span class="hint" id="costVerify"></span></span><input type="checkbox" id="verify" class="tg"></label>
-      <label class="opt"><span class="opt-t">2차 검증 때 원본 전체 다시 보기<span class="hint" id="costFull"></span></span><input type="checkbox" id="verifyFull" class="tg"></label>
-      <label class="opt"><span class="opt-t">필요한 쪽만 확대 이미지로 다시 보기<span class="hint" id="costZoom"></span></span><input type="checkbox" id="zoom" class="tg"></label>
-      <label class="opt">시각자료 자동으로 잘라 넣기<input type="checkbox" id="autoVisuals" class="tg"></label>
-      <label class="opt">쪽 넘김 간격<input type="checkbox" id="pacing" class="tg"></label>
-      <div id="paceBox" class="adv"><div class="adv-in">
-        <div class="opt sub">
-          <span class="note">쪽마다 기다리는 시간</span>
-          <span class="r gap6"><input type="number" id="paceMinSec" class="num" min="0" max="600" step="5" aria-label="최소 초"> ~ <input type="number" id="paceMaxSec" class="num" min="0" max="600" step="5" aria-label="최대 초">초</span>
-        </div>
-      </div></div>
-      <div class="note" id="advancedMsg" aria-live="polite"></div>
-      <div class="r"><button type="button" id="btnDeleteProfile" class="pill sm danger">이 계정 지우기</button></div>
-    </div></div>
+
+    <!-- 저장·오류 안내: 어디를 보고 있든 화면 아래에 잠깐 뜸 -->
+    <div id="settingsMsg" class="set-msg" role="status" aria-live="polite"></div>
+    <div id="advancedMsg" class="set-msg" role="status" aria-live="polite"></div>
   </section>
 
   <!-- 로그인 · 회원가입: 로그인해야 앱을 쓸 수 있음 -->

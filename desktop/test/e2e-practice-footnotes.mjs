@@ -47,7 +47,6 @@ await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'), null, { timeout: 15000 });
 await panel.click('#btnOpenSettings');
-await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '1');
 await panel.press('#paceMaxSec', 'Tab');

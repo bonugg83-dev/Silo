@@ -51,7 +51,6 @@ await panel.waitForFunction(() => !document.body.classList.contains('auth-open')
 
 // 버튼 이름은 "테스트"
 assert.equal((await bar.textContent('#practice')).trim(), '테스트');
-assert.equal((await panel.textContent('#btnPractice2')).trim(), '테스트');
 await bar.click('#practice');
 const pv = await find(/practice\/practice\.html/);
 await pv.waitForLoadState();

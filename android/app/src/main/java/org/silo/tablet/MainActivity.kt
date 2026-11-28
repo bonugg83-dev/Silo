@@ -3,8 +3,18 @@ package org.silo.tablet
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.view.PixelCopy
+import android.widget.ImageView
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -65,6 +75,7 @@ class MainActivity : Activity() {
 
     private val main = Handler(Looper.getMainLooper())
     private lateinit var store: Store
+    private lateinit var frame: FrameLayout
     private lateinit var root: LinearLayout
     private lateinit var topBar: LinearLayout
     private lateinit var strip: LinearLayout
@@ -100,6 +111,7 @@ class MainActivity : Activity() {
         store = Store(filesDir)
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
+        frame = FrameLayout(this)
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
         topBar = buildTopBar()
         val content = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -111,7 +123,9 @@ class MainActivity : Activity() {
         content.addView(panel, LinearLayout.LayoutParams(px(400), ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(48)))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        setContentView(root)
+        // 맨 바깥은 겹쳐 놓는 판: 앱 화면(root) 위에 새 버전 안내를 덮을 수 있게
+        frame.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        setContentView(frame)
         fitSystemBars()
 
         val site = newSiteView()
@@ -157,6 +171,112 @@ class MainActivity : Activity() {
     private fun showUpdate(v: String) {
         updateBtn.text = "새 버전 $v · 설치"
         updateBtn.visibility = View.VISIBLE
+        promptUpdate(v)
+    }
+
+    // ---------------------------------------------------------------- 새 버전 안내
+    // 다 받으면 앱 전체를 흐리게 덮고 가운데에 "확인 / 다음에 하기" (켠 동안 한 번만).
+    // 다음에 하기를 눌러도 위쪽 줄의 설치 버튼은 남는다.
+    private var updatePrompted = false
+    private var updateOverlay: View? = null
+
+    /** 로그인·시작 모션·교정이 도는 동안은 띄우지 않고 30초 뒤에 다시 봄 */
+    private fun promptUpdate(v: String) {
+        if (updatePrompted || isFinishing || updater.ready == null) return
+        if (booting || authOpen || splashOpen || store.runLockActive()) {
+            main.postDelayed({ promptUpdate(v) }, 30_000); return
+        }
+        updatePrompted = true
+        captureScreen { shot -> showUpdateOverlay(v, shot) }
+    }
+
+    /** 지금 화면을 작게 찍는다 (작게 찍은 걸 크게 늘리면 흐려짐). 못 찍으면 null: 어둡게만 덮음 */
+    private fun captureScreen(done: (Bitmap?) -> Unit) {
+        val w = (frame.width / 10).coerceAtLeast(1)
+        val h = (frame.height / 10).coerceAtLeast(1)
+        if (frame.width == 0) { done(null); return }
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        try {
+            PixelCopy.request(window, bmp, { r -> done(if (r == PixelCopy.SUCCESS) bmp else null) }, main)
+        } catch (e: Exception) {
+            Log.w(TAG, "화면 찍기 실패: ${e.message}"); done(null)
+        }
+    }
+
+    private fun showUpdateOverlay(v: String, shot: Bitmap?) {
+        if (updateOverlay != null) return
+        val overlay = FrameLayout(this).apply {
+            isClickable = true // 뒤 화면을 누르지 못하게
+            isFocusable = true
+            setBackgroundColor(Color.BLACK)
+        }
+        if (shot != null) {
+            overlay.addView(ImageView(this).apply {
+                setImageBitmap(shot)
+                scaleType = ImageView.ScaleType.FIT_XY
+                if (Build.VERSION.SDK_INT >= 31) setRenderEffect(RenderEffect.createBlurEffect(px(6).toFloat(), px(6).toFloat(), Shader.TileMode.CLAMP))
+            }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        overlay.addView(View(this).apply { setBackgroundColor(Color.parseColor("#80000000")) },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(px(28), px(28), px(28), px(20))
+            background = GradientDrawable().apply {
+                cornerRadius = px(18).toFloat(); setColor(Color.parseColor("#1c1c1c")); setStroke(px(1), Color.parseColor("#2c2c2c"))
+            }
+            elevation = px(24).toFloat()
+        }
+        fun text(s: CharSequence, sp: Float, color: String, bold: Boolean = false) = TextView(this).apply {
+            text = s
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+            setTextColor(Color.parseColor(color))
+            gravity = Gravity.CENTER
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+            setLineSpacing(0f, 1.25f)
+        }
+        val wrap = { top: Int -> LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = px(top) } }
+        card.addView(text("↓", 22f, "#4f9dff", bold = true).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#264f9dff")) }
+        }, LinearLayout.LayoutParams(px(48), px(48)))
+        card.addView(text("새 버전이 준비됐어요", 20f, "#f1f1f1", bold = true), wrap(14))
+        val ver = SpannableString("${BuildConfig.VERSION_NAME} → $v").apply {
+            setSpan(ForegroundColorSpan(Color.parseColor("#4f9dff")), length - v.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(StyleSpan(Typeface.BOLD), length - v.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        card.addView(text(ver, 14f, "#9a9a9a"), wrap(4))
+        card.addView(text("업데이트하면 설치 화면이 뜨고, 설치를 한 번 누르면 새 버전으로 바뀌어요. 작업 기록은 그대로 남아요.", 14f, "#cfcfcf"), wrap(12))
+
+        val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val later = pill("다음에 하기") { hideUpdateOverlay() }.apply {
+            (background as GradientDrawable).apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#272727")); setStroke(px(1), Color.parseColor("#6b6b6b")) }
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        val ok = pill("확인") { hideUpdateOverlay(); installUpdate() }.apply {
+            (background as GradientDrawable).apply { cornerRadius = px(24).toFloat(); setColor(Color.parseColor("#f1f1f1")) }
+            setTextColor(Color.parseColor("#0b0b0b"))
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        btns.addView(later, LinearLayout.LayoutParams(0, px(48), 1f).apply { marginEnd = px(8) })
+        btns.addView(ok, LinearLayout.LayoutParams(0, px(48), 1f))
+        card.addView(btns, wrap(22))
+        card.addView(text("다음에 하기를 누르면 위쪽 줄의 설치 버튼으로 언제든 설치할 수 있어요.", 12f, "#9a9a9a"), wrap(12))
+
+        val cardW = minOf(px(400), resources.displayMetrics.widthPixels - px(32))
+        overlay.addView(card, FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        overlay.alpha = 0f
+        frame.addView(overlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        overlay.animate().alpha(1f).setDuration(250).start()
+        updateOverlay = overlay
+        ok.requestFocus()
+    }
+
+    private fun hideUpdateOverlay() {
+        val o = updateOverlay ?: return
+        updateOverlay = null
+        o.animate().alpha(0f).setDuration(150).withEndAction { frame.removeView(o) }.start()
     }
 
     /** 받아 둔 새 버전 설치: 안드로이드 설치 화면이 뜨고 "설치"를 한 번 누름. 교정 중이면 하지 않음 */
@@ -362,6 +482,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Activity.onBackPressed")
     override fun onBackPressed() {
+        if (updateOverlay != null) { hideUpdateOverlay(); return } // 새 버전 안내: 뒤로 = 다음에 하기
         val w = current()
         if (!(booting || authOpen || splashOpen) && (w.canGoBack() || shownPopup != null)) goBack() else moveTaskToBack(true)
     }

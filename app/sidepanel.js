@@ -429,9 +429,9 @@ async function showTodayCost() {
   const pages = r[costPagesKey(pid())] || 0;
   const month = r[costMonthKey(pid())] || 0;
   $('costToday').textContent = `$${usd.toFixed(2)}`;
-  $('costTodayWon').textContent = won(usd);
+  $('costTodayWon').textContent = usd > 0 ? won(usd) : ''; // 0원은 적지 않음
   $('costMonth').textContent = `$${month.toFixed(2)}`;
-  $('costMonthWon').textContent = won(month);
+  $('costMonthWon').textContent = month > 0 ? won(month) : '';
   $('todayCost').textContent = pages ? `오늘 ${pages}쪽, 쪽당 ${won(usd / pages)}` : '';
   const lim = Number(me()?.monthlyLimit) || 0;
   $('limitBar').classList.toggle('hidden', !lim);
@@ -596,6 +596,7 @@ function fillForms() {
   sel.value = settings.model;
   for (const [id, prop] of Object.entries(ADV_FIELDS)) $(id)[prop] = settings[id];
   $('paceBox').classList.toggle('open', !!settings.pacing);
+  $('verifyFull').disabled = !settings.verify; // 2차 검증을 켜야 의미가 있음
   showOptionCosts();
   renderMe();
 }
@@ -856,8 +857,8 @@ function paintFeedback(fb) {
   if (!el || !fb) return;
   const when = fb.at ? new Date(fb.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   el.textContent = fb.at
-    ? `내 피드백 ${fb.list.length}건${fb.shared.length ? ` · 모두의 피드백 ${fb.shared.length}가지` : ''} · ${when}에 가져옴`
-    : '아직 가져오지 않았어요.';
+    ? `내 피드백 ${fb.list.length}건${fb.shared.length ? ` · 모두에게 해당 ${fb.shared.length}건` : ''} · ${when} 확인`
+    : '아직 가져오지 않았어요';
 }
 
 async function runInPage(tabId, func, args = []) {
@@ -1891,10 +1892,6 @@ function setSettingsOpen(on) {
 }
 $('btnOpenSettings').addEventListener('click', () => { setSettingsOpen(true); loadFeedback().then(paintFeedback); });
 $('btnCloseSettings').addEventListener('click', () => setSettingsOpen(false));
-$('btnAdvanced').addEventListener('click', () => {
-  const on = $('advancedBox').classList.toggle('open');
-  $('btnAdvanced').setAttribute('aria-expanded', String(on));
-});
 $('btnChangeKey').addEventListener('click', () => toggleBox('changeKeyBox', 'btnChangeKey'));
 $('btnSetGKey').addEventListener('click', () => toggleBox('gKeyBox', 'btnSetGKey'));
 $('btnSaveGKey').addEventListener('click', setGeminiKey);
@@ -1944,7 +1941,7 @@ $('model').addEventListener('change', async () => {
   settings.model = $('model').value;
   await persist();
   showOptionCosts();
-  msg('settingsMsg', isGemini(settings.model) && !unlocked?.gkey ? '모델을 바꿨어요. 이 모델은 Gemini 키가 있어야 해요. 위 내 계정에서 넣어 주세요.' : '모델을 바꿨어요.');
+  msg('settingsMsg', isGemini(settings.model) && !unlocked?.gkey ? '모델을 바꿨어요. 이 모델은 Gemini 키가 있어야 해요. 바로 아래 Gemini 칸에서 넣어 주세요.' : '모델을 바꿨어요.');
 });
 
 async function editorBook() {
@@ -2336,16 +2333,6 @@ async function markReviewed() {
   await showReview(true);
 }
 
-async function openPractice() {
-  const existing = (await platform.tabs.query({})).find((t) => isPracticeUrl(t.url));
-  if (existing) {
-    await platform.tabs.update(existing.id, { active: true });
-    await platform.windows.update(existing.windowId, { focused: true });
-  } else {
-    await platform.tabs.create({ url: `${PRACTICE_URL}?idx=0&book_page=1` });
-  }
-}
-$('btnPractice2').addEventListener('click', () => openPractice().catch((e) => setError(e.message)));
 $('btnFeedback').addEventListener('click', async () => {
   const b = $('btnFeedback');
   b.disabled = true;

@@ -129,7 +129,6 @@ console.log('✓ 편집하기(팝업) → 목차 읽기 → 교정 → 편집기
 
 // 3. 자동 모드 151 → 153
 await panel.click('#btnOpenSettings');
-await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '2');
 await panel.fill('#paceMaxSec', '3');
 await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장 (저장 버튼 없음)
