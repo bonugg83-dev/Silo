@@ -28,7 +28,7 @@ import {
   AVATAR_COLORS, LOCK_OPTIONS, makeProfile, encryptKey, decryptKey, isApiKey, maskKey, checkPassword,
   bookKey, costKey, costPagesKey, costMonthKey, runLockKey, today, thisMonth, legacyMigration, profileDataKeys, lockExpired, overLimit, runLockedByOther,
 } from './lib/profiles.js';
-import { createCloud, OfflineError, CloudError } from './lib/cloud.js';
+import { createCloud, OfflineError, CloudError, cleanName } from './lib/cloud.js';
 
 const $ = (id) => document.getElementById(id);
 const TOC_VERSION = 2;
@@ -129,7 +129,7 @@ function paintAvatar(el, p) {
   const [bg, fg] = AVATAR_COLORS[(p?.color || 0) % AVATAR_COLORS.length];
   el.style.background = bg;
   el.style.color = fg;
-  el.textContent = (p?.name || '?').trim().slice(0, 1);
+  el.textContent = (p?.displayName || p?.name || '?').trim().slice(0, 1);
 }
 async function setLockState(on) {
   const st = on ? { activeProfileId: unlocked.pid, lockState: { pid: unlocked.pid, unlocked: true, at: Date.now() } }
@@ -147,6 +147,8 @@ async function openProfile(p, apiKey, ses = null, gkey = '') {
   showTodayCost();
   refreshStatus();
   if (cloudSes) syncCost();
+  // 이름 없이 가입한 예전 계정: 로그인한 뒤 한 번 물어봄 ('나중에'를 누르면 다음 로그인 때 다시)
+  if (cloudSes && !p.displayName) setTimeout(() => { if (me()?.id === p.id && !me().displayName) askName(); }, 400);
   refreshShared({ force: true }).catch(() => {});
   loginCheckAt = 0;
   (async () => { // 이미 열린 마이픽 창이 있으면 로그인 확인
@@ -185,7 +187,7 @@ function gateStep(step) {
   $('gateSignup').classList.toggle('hidden', step !== 'signup');
   $('gateMsg').textContent = '';
   if (step === 'signup') prepSignup();
-  setTimeout(() => (step === 'login' ? ($('loginId').value ? $('loginPw') : $('loginId')) : $('newName')).focus(), 50);
+  setTimeout(() => (step === 'login' ? ($('loginId').value ? $('loginPw') : $('loginId')) : $('newDisplayName')).focus(), 50);
 }
 function showGate(on) {
   document.body.classList.toggle('auth-open', on);
@@ -216,12 +218,14 @@ async function adoptLegacy(p) {
   if (plan.remove.length) await platform.storage.local.remove(plan.remove);
 }
 async function signup() {
+  const displayName = cleanName($('newDisplayName').value);
   const name = $('newName').value.trim();
   const code = $('newCode').value.trim();
   const legacy = settings.keys.find((k) => k.id === $('legacyKey').value);
   const apiKey = legacy ? legacy.key : $('newKey').value.trim();
   const pw = $('newPw1').value;
-  const bad = !/^[A-Za-z0-9가-힣_.-]{2,20}$/.test(name) ? '아이디는 영문, 숫자, 한글로 2~20자예요.'
+  const bad = !displayName ? '이름을 넣어 주세요.'
+    : !/^[A-Za-z0-9가-힣_.-]{2,20}$/.test(name) ? '아이디는 영문, 숫자, 한글로 2~20자예요.'
     : findAccount(name) ? '이 컴퓨터에 이미 있는 아이디예요. 로그인해 주세요.'
       : checkPassword(pw, $('newPw1b').value)
         || (!code ? '가입 코드를 넣어 주세요.' : '')
@@ -230,6 +234,7 @@ async function signup() {
   $('gateMsg').textContent = '계정을 만드는 중…';
   const first = !profiles.length;
   const p = await makeProfile({ name, apiKey, password: pw, index: profiles.length });
+  p.displayName = displayName;
   let ses;
   try {
     ses = await cloud.signUp({ id: name, password: pw, code, profile: p, settings });
@@ -245,7 +250,7 @@ async function signup() {
     settings.keys = settings.keys.filter((k) => k.id !== legacy.id);
     await platform.storage.local.set({ settings });
   }
-  for (const id of ['newName', 'newPw1', 'newPw1b', 'newKey', 'newCode']) $(id).value = '';
+  for (const id of ['newDisplayName', 'newName', 'newPw1', 'newPw1b', 'newKey', 'newCode']) $(id).value = '';
   await openProfile(p, apiKey, ses);
 }
 /** 서버의 계정 기록을 이 컴퓨터에 반영 (없으면 새로 둠) */
@@ -474,8 +479,9 @@ function renderMe() {
   const p = me();
   if (!p) return;
   paintAvatar($('meAvatar'), p);
-  $('meName').textContent = p.name;
-  $('meSub').textContent = '로그인 중';
+  $('meName').textContent = p.displayName || p.name;
+  $('meSub').textContent = p.displayName ? `아이디 ${p.name} · 로그인 중` : '로그인 중';
+  $('meDisplayName').textContent = p.displayName || '아직 안 넣었어요';
   $('meKey').textContent = p.mask;
   $('meGKey').textContent = p.gmask || '없음';
   $('btnSetGKey').textContent = p.gmask ? '키 바꾸기' : '키 넣기';
@@ -484,6 +490,39 @@ function renderMe() {
   const sel = $('lockAfter');
   if (!sel.options.length) for (const o of LOCK_OPTIONS) sel.add(new Option(o.label, String(o.min)));
   sel.value = String(p.lockAfterMin ?? 30);
+}
+/** 이름 넣기·바꾸기 창: 계정 문서(displayName)와 로그인 계정에 같이 저장 */
+function askName() {
+  const dlg = $('nameDlg');
+  if (dlg.open) return;
+  const p = me();
+  if (!p) return;
+  $('nameTitle').textContent = p.displayName ? '이름 바꾸기' : '이름을 알려 주세요';
+  $('nameInput').value = p.displayName || '';
+  $('nameMsg').textContent = '';
+  dlg.showModal();
+  setTimeout(() => $('nameInput').focus(), 30);
+}
+async function saveName(e) {
+  e.preventDefault();
+  const p = me();
+  const n = cleanName($('nameInput').value);
+  if (!n) { $('nameMsg').textContent = '이름을 넣어 주세요.'; return; }
+  const s = online();
+  if (!s) { $('nameMsg').textContent = NEED_NET; return; }
+  $('nameMsg').textContent = '저장하는 중…';
+  try {
+    await cloud.setName(s, n);
+    await keepSession();
+  } catch (err) {
+    $('nameMsg').textContent = err instanceof OfflineError ? NEED_NET : err.message;
+    return;
+  }
+  p.displayName = n;
+  await platform.storage.local.set({ profiles });
+  renderMe();
+  $('nameDlg').close('ok');
+  msg('settingsMsg', '이름을 저장했어요.');
 }
 function toggleBox(box, btn, on = !$(box).classList.contains('open')) {
   $(box).classList.toggle('open', on);
@@ -1919,6 +1958,9 @@ $('lockAfter').addEventListener('change', async () => {
 $('gateLogin').addEventListener('submit', (e) => { e.preventDefault(); login(); });
 $('gateSignup').addEventListener('submit', (e) => { e.preventDefault(); signup(); });
 $('toSignup').addEventListener('click', () => gateStep('signup'));
+$('nameForm').addEventListener('submit', saveName);
+$('btnChangeName').addEventListener('click', askName);
+$('nameLater').addEventListener('click', () => $('nameDlg').close());
 $('toLogin').addEventListener('click', () => gateStep('login'));
 $('btnForgot').addEventListener('click', () => toggleBox('forgotBox'));
 $('legacyKey').addEventListener('change', () => $('newKeyFld').classList.toggle('hidden', !!$('legacyKey').value));

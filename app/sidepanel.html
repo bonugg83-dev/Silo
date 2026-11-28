@@ -148,6 +148,10 @@
       <input type="password" id="newPw2" placeholder="새 비밀번호 한 번 더" autocomplete="new-password" aria-label="새 비밀번호 한 번 더">
       <div class="r"><button type="button" id="btnSavePw" class="pill">비밀번호 바꾸기</button></div>
     </div></div>
+    <div class="opt static">
+      <span class="opt-t">이름<span class="hint" id="meDisplayName"></span></span>
+      <button type="button" id="btnChangeName" class="pill sm">바꾸기</button>
+    </div>
     <label class="opt">안 쓰면 자동 로그아웃<select id="lockAfter" class="sm"></select></label>
     <div class="opt static">
       <span class="opt-t">관리자 피드백<span class="hint" id="feedbackInfo"></span></span>
@@ -185,6 +189,7 @@
 
       <form id="gateSignup" class="stack hidden" autocomplete="off">
         <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">어느 컴퓨터에서나 같은 아이디로 로그인할 수 있어요. API 키는 비밀번호로 잠가 저장해요.</p></div>
+        <label class="fld">이름<input type="text" id="newDisplayName" maxlength="20" autocomplete="name" spellcheck="false" placeholder="실제 이름 (관리자가 누구 계정인지 알아보게)"></label>
         <label class="fld">아이디<input type="text" id="newName" maxlength="20" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="영문, 숫자, 한글 2~20자"></label>
         <label class="fld">비밀번호<input type="password" id="newPw1" autocomplete="new-password" placeholder="4자 이상"></label>
         <label class="fld">비밀번호 확인<input type="password" id="newPw1b" autocomplete="new-password"></label>
@@ -242,6 +247,17 @@
       <h2 id="askTitle"></h2>
       <p id="askBody" class="pre"></p>
       <div class="ask-btns"><button type="submit" value="cancel" id="askCancel" class="pill" autofocus>취소</button><button type="submit" value="ok" id="askOk" class="pill"></button></div>
+    </form>
+  </dialog>
+
+  <!-- 이름 넣기: 이름 없이 가입한 계정은 로그인한 뒤 한 번 물어봄 (설정 → 계정 → 이름에서도 바꿈) -->
+  <dialog id="nameDlg" class="ask" aria-labelledby="nameTitle" aria-describedby="nameBody">
+    <form method="dialog" class="ask-in" id="nameForm">
+      <h2 id="nameTitle">이름을 알려 주세요</h2>
+      <p id="nameBody">관리자가 누구 계정인지 알아볼 수 있게 실제 이름을 넣어 주세요. 로그인할 때는 지금처럼 아이디를 써요.</p>
+      <input type="text" id="nameInput" maxlength="20" autocomplete="name" spellcheck="false" placeholder="이름" aria-label="이름">
+      <div id="nameMsg" class="note" role="status"></div>
+      <div class="ask-btns"><button type="button" id="nameLater" class="pill">나중에</button><button type="submit" value="ok" id="nameOk" class="pill white">저장</button></div>
     </form>
   </dialog>
 

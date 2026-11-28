@@ -42,8 +42,8 @@ await panel.waitForFunction(() => document.querySelector('canvas.splash'), null,
 await panel.waitForFunction(() => !document.querySelector('canvas.splash') && !document.body.classList.contains('splashing'), null, { timeout: 15000 });
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 if (await panel.isVisible('#toSignup')) await panel.click('#toSignup');
-await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {});
-await panel.fill('#newName', 'kim'); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
+await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {});
+await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', 'kim'); await panel.fill('#newPw1', 'abcd'); await panel.fill('#newPw1b', 'abcd');
 await panel.fill('#newKey', 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234');
 await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');

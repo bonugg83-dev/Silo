@@ -38,7 +38,7 @@ await panel.evaluate((k) => chrome.storage.local.set({
 await panel.reload();
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 assert.ok(await panel.isVisible('#gateLogin'), '처음엔 로그인 화면 (다른 컴퓨터에서 만든 계정일 수 있음)');
-await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 assert.ok(await panel.isVisible('#legacyFld'), '예전 키를 고를 수 있음');
 assert.ok(!(await panel.isVisible('#newKeyFld')), '예전 키를 고르면 새 키 칸은 숨김');
 assert.equal(await panel.locator('#legacyKey option').count(), 3);
@@ -51,7 +51,7 @@ if (process.env.SHOTS) {
   }
 }
 
-await panel.fill('#newName', 'maker');
+await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', 'maker');
 await panel.fill('#newPw1', 'abcd');
 await panel.fill('#newPw1b', 'abcd');
 await panel.fill('#newCode', 'WRONG');
@@ -62,6 +62,8 @@ await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 const cloudDoc = [...fb.docs.values()][0];
+assert.equal(cloudDoc.displayName?.stringValue, '홍길동', '이름이 계정 문서(Firestore users)에 남음');
+assert.equal([...fb.users.values()][0].displayName, '홍길동', '이름이 로그인 계정(Authentication)에도 남음');
 assert.ok(cloudDoc && !JSON.stringify([...fb.docs.values()]).includes('OLDKEY_'), '서버에는 잠긴 키만');
 assert.ok(![...fb.users.values()][0].password.includes('abcd'), '서버로 원래 비밀번호를 보내지 않음');
 const all = await panel.evaluate(() => chrome.storage.local.get(null));
@@ -106,6 +108,8 @@ await panel.fill('#loginId', 'MAKER');
 await panel.fill('#loginPw', 'abcd');
 await panel.click('#btnLogin');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+await panel.waitForTimeout(600);
+assert.ok(!(await panel.isVisible('#nameDlg')), '이름이 있는 계정은 묻지 않음');
 const again = await panel.evaluate(() => chrome.storage.local.get(null));
 assert.equal(again.profiles.length, 1);
 assert.equal(again.profiles[0].monthlyLimit, 1, '월 한도도 따라옴');
@@ -148,7 +152,18 @@ await panel.waitForSelector('#loginCodeFld:not(.hidden)');
 await panel.fill('#loginCode', 'TESTCODE');
 await panel.click('#btnLogin');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+// 이름 없이 만든 계정: 로그인한 뒤 이름을 한 번 물어봄
+await panel.waitForSelector('#nameDlg[open]', { timeout: 3000 });
+await panel.click('#nameOk');
+assert.match(await panel.textContent('#nameMsg'), /이름을 넣어/, '빈 이름은 저장 안 함');
+await panel.fill('#nameInput', '  김 옛계정 ');
+await panel.press('#nameInput', 'Enter');
+await panel.waitForSelector('#nameDlg', { state: 'hidden' });
 const moved = (await panel.evaluate(() => chrome.storage.local.get('profiles'))).profiles.find((p) => p.name === 'oldie');
+assert.equal(moved.displayName, '김 옛계정');
+const movedDoc = [...fb.docs.entries()].find(([k]) => k === `/users/${moved.uid}`)?.[1];
+assert.equal(movedDoc?.displayName?.stringValue, '김 옛계정', '물어본 이름도 Firestore에 남음');
+assert.equal([...fb.users.values()].find((u) => u.uid === moved.uid).displayName, '김 옛계정');
 assert.ok(moved.uid && moved.id === old.id, '온라인으로 옮겨도 이 컴퓨터 기록 키는 그대로');
 await panel.waitForFunction(() => [...document.querySelectorAll('#costMonth')].some((e) => /0\.50/.test(e.textContent)));
 

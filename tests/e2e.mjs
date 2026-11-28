@@ -170,7 +170,7 @@ panel.on('dialog', (d) => d.accept());
 // 1. 로그인 전에는 로그인·회원가입 화면만 (처음에도 로그인부터: 다른 컴퓨터에서 만든 계정일 수 있음)
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 assert.ok(await panel.isVisible('#gateLogin'));
-await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
 assert.ok(await panel.isVisible('#gateSignup'));
 assert.equal(await panel.getAttribute('#btnAuto', 'aria-checked'), 'true', '자동모드 기본 켜짐');
 assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
@@ -179,7 +179,7 @@ assert.equal(await panel.getAttribute('.hd .brand', 'aria-label'), 'Silo');
 const KEY_A = 'sk-ant-api03-TESTKEY_abcdefghijklmnopqrstuvwxyz1234';
 const KEY_B = 'sk-ant-api03-OTHERKEY_abcdefghijklmnopqrstuvwxyz9999';
 async function signup(id, pw, key) {
-  await panel.fill('#newName', id);
+  await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', id);
   await panel.fill('#newPw1', pw);
   await panel.fill('#newPw1b', pw);
   await panel.fill('#newKey', key);
@@ -187,7 +187,7 @@ async function signup(id, pw, key) {
   await panel.click('#btnSignup');
   await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 }
-await panel.fill('#newName', '교정A');
+await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', '교정A');
 await panel.fill('#newPw1', '1234');
 await panel.fill('#newPw1b', '9999');
 await panel.fill('#newKey', KEY_A);
@@ -203,14 +203,16 @@ assert.equal(all.lockState.unlocked, true);
 const pidA = all.profiles[0].id;
 await panel.click('#btnOpenSettings');
 await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
-assert.equal(await panel.textContent('#meName'), '교정A');
+assert.equal(await panel.textContent('#meName'), '홍길동', '이름이 먼저 보임');
+assert.match(await panel.textContent('#meSub'), /아이디 교정A/);
+assert.equal(all.profiles[0].displayName, '홍길동', '가입할 때 넣은 이름');
 assert.equal(await panel.textContent('#meKey'), 'sk-ant-a…1234');
 await panel.click('#btnLogout');
 await panel.waitForFunction(() => document.body.classList.contains('auth-open') && !document.body.classList.contains('settings-open'));
 assert.ok(await panel.isVisible('#gateLogin'), '계정이 있으면 로그인');
 assert.equal(await panel.inputValue('#loginId'), '교정A', '마지막 아이디');
-await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
-await panel.fill('#newName', '교정a');
+await panel.click('#toSignup'); await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {}); // 가입 화면은 0.05초 뒤 이름 칸으로 포커스를 옮김
+await panel.fill('#newDisplayName', '홍길동'); await panel.fill('#newName', '교정a');
 await panel.fill('#newPw1', '5678');
 await panel.fill('#newPw1b', '5678');
 await panel.fill('#newKey', KEY_B);
@@ -222,7 +224,7 @@ all = await panel.evaluate(() => chrome.storage.local.get(null));
 assert.equal(all.profiles.length, 2);
 assert.ok(!JSON.stringify(all).includes('OTHERKEY'));
 await panel.click('#btnOpenSettings');
-assert.equal(await panel.textContent('#meName'), '교정B');
+assert.match(await panel.textContent('#meSub'), /아이디 교정B/);
 await panel.click('#btnLogout');
 await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
 await panel.fill('#loginId', '교정A');

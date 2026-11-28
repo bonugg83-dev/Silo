@@ -3,7 +3,7 @@
 // - 로그인 비밀번호는 그대로 보내지 않고 해시로 바꿔 보낸다. API 키는 원래 비밀번호로 잠가(profiles.js)
 //   잠긴 채로만 올린다. 그래서 서버(구글)나 관리자는 키를 풀 수 없다.
 // - 가입 코드는 서버 규칙(config/signup)이 확인한다. 코드 값은 앱에 들어 있지 않다.
-// - 올리는 것: 계정(아이디, 잠긴 키, 키 앞뒤 일부, 색, 자동 로그아웃, 월 한도), 설정, 비용 합계.
+// - 올리는 것: 계정(아이디, 이름, 잠긴 키, 키 앞뒤 일부, 색, 자동 로그아웃, 월 한도), 설정, 비용 합계.
 //   책 진행은 컴퓨터마다 따로 (올리지 않음).
 // 화면 없는 함수만 두어 node 테스트로 확인할 수 있게 한다. fetch는 바꿔 끼울 수 있다.
 
@@ -71,8 +71,11 @@ export function fromValue(v) {
 export const fromFields = (f) => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, fromValue(v)]));
 
 /** 계정 문서에 올리는 칸 (책 진행·풀린 키는 절대 넣지 않음) */
-export const PROFILE_FIELDS = ['name', 'color', 'enc', 'mask', 'genc', 'gmask', 'lockAfterMin', 'monthlyLimit', 'createdAt']; // genc·gmask: Gemini 키(잠금)
+// name: 아이디, displayName: 사람 이름 (관리자가 콘솔에서 누구 계정인지 알아보게)
+export const PROFILE_FIELDS = ['name', 'displayName', 'color', 'enc', 'mask', 'genc', 'gmask', 'lockAfterMin', 'monthlyLimit', 'createdAt']; // genc·gmask: Gemini 키(잠금)
 export const pickProfile = (p) => Object.fromEntries(PROFILE_FIELDS.filter((k) => p[k] !== undefined).map((k) => [k, p[k]]));
+/** 사람 이름: 앞뒤 빈칸을 없애고 1~20자 */
+export const cleanName = (n) => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 20);
 /** 설정 중 올리는 것 (예전 평문 키 목록은 절대 올리지 않음) */
 export const pickSettings = (s) => { const { keys, apiKey, activeKeyId, ...rest } = s || {}; return rest; };
 
@@ -137,6 +140,8 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
     async signUp({ id, password, code, profile, settings }) {
       const r = await auth('signUp', { email: await idEmail(id), password: await authPassword(id, password), returnSecureToken: true });
       const s = toSession(r);
+      // 로그인 계정에도 이름을 붙여 둔다 (실패해도 가입은 계속: 계정 문서의 displayName이 기준)
+      if (profile?.displayName) await auth('update', { idToken: s.idToken, displayName: profile.displayName, returnSecureToken: false }).catch(() => {});
       try {
         await call(`${DOCS}/users?documentId=${s.uid}`, json('POST', {
           fields: toFields({ ...pickProfile(profile), signupCode: (code || '').trim(), settings: settings ? JSON.stringify(pickSettings(settings)) : '' }),
@@ -165,6 +170,11 @@ export function createCloud({ fetch: f = (...a) => globalThis.fetch(...a), now =
       if (genc !== undefined || gmask !== undefined) {
         await patch(s, '', { genc: genc || '', gmask: gmask || '' }).catch((e) => console.warn('Gemini 키 온라인 저장 실패', e));
       }
+    },
+    /** 이름 넣기·바꾸기: 계정 문서와 로그인 계정 둘 다 */
+    async setName(s, displayName) {
+      await patch(s, '', { displayName });
+      await auth('update', { idToken: s.idToken, displayName, returnSecureToken: false }).catch(() => {});
     },
     saveSettings: (s, settings) => patch(s, '', { settings: JSON.stringify(pickSettings(settings)) }),
     /** 비밀번호 바꾸기 (로그인 비밀번호와 키 잠금을 같이) */

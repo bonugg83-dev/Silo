@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCloud, idEmail, authPassword, toFields, fromFields, pickSettings, pickProfile, monthFromDoc, OfflineError } from '../app/lib/cloud.js';
+import { createCloud, idEmail, authPassword, toFields, fromFields, pickSettings, pickProfile, monthFromDoc, OfflineError, cleanName } from '../app/lib/cloud.js';
 
 test('아이디는 대소문자 상관없이 같은 내부 이메일, 한글도 됨', async () => {
   assert.equal(await idEmail(' Kim '), await idEmail('kim'));
@@ -54,4 +54,30 @@ test('가입 코드가 틀리면 만든 로그인 계정을 지우고 알림', a
 test('없는 아이디 / 틀린 비밀번호 문구', async () => {
   const c = createCloud({ fetch: async () => res(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS', status: 'INVALID_ARGUMENT' } }) });
   await assert.rejects(c.signIn({ id: 'kim', password: '1' }), /맞지 않아요/);
+});
+
+test('이름: 가입 때 계정 문서와 로그인 계정에 같이 남기고, 나중에 바꿀 수 있음', async () => {
+  const calls = [];
+  const c = createCloud({
+    fetch: async (url, init) => {
+      calls.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+      if (url.includes(':signUp')) return res(200, { localId: 'U', idToken: 'T', refreshToken: 'R', expiresIn: '3600' });
+      return res(200, {});
+    },
+  });
+  const s = await c.signUp({ id: 'kim', password: '1234', code: 'ok', profile: { name: 'kim', displayName: '김교정' } });
+  const upd = calls.find((x) => x.url.includes(':update'));
+  assert.equal(upd.body.displayName, '김교정');
+  const create = calls.find((x) => x.url.includes('/users?documentId=U'));
+  assert.equal(create.body.fields.displayName.stringValue, '김교정');
+  assert.equal(create.body.fields.name.stringValue, 'kim');
+  calls.length = 0;
+  await c.setName(s, '김바름');
+  assert.ok(calls.some((x) => x.url.includes('updateMask.fieldPaths=displayName') && x.body.fields.displayName.stringValue === '김바름'));
+  assert.ok(calls.some((x) => x.url.includes(':update') && x.body.displayName === '김바름'));
+});
+
+test('이름 다듬기', () => {
+  assert.equal(cleanName('  김   교정 '), '김 교정');
+  assert.equal(cleanName(''), '');
 });
