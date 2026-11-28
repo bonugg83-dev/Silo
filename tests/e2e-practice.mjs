@@ -81,14 +81,14 @@ await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 await panel.click('#btnOpenSettings');
 await panel.waitForFunction(() => document.body.classList.contains('settings-open'));
-await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '2');
 await panel.press('#paceMaxSec', 'Tab'); // 칸을 벗어나면 바로 저장
 await panel.waitForFunction(() => /저장했어요/.test(document.querySelector('#advancedMsg').textContent));
 
-// 연습 페이지 열기 (설정 탭 버튼)
-const [practice] = await Promise.all([context.waitForEvent('page'), panel.click('#btnPractice2')]);
+// 연습 페이지 열기 (앱에서는 위쪽 막대의 테스트 버튼. 브라우저 테스트에는 위쪽 막대가 없어 직접 엶)
+const [practice] = await Promise.all([context.waitForEvent('page'),
+  panel.evaluate(() => chrome.tabs.create({ url: chrome.runtime.getURL('practice/practice.html?idx=0&book_page=1') }))]);
 practice.on('pageerror', (e) => errors.push('practice: ' + e.message));
 await practice.waitForLoadState();
 await practice.waitForFunction(() => document.querySelector('#book_img').complete && document.querySelector('#book_img').naturalWidth > 0);

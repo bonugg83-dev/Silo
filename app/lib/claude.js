@@ -4,11 +4,11 @@ import { SYSTEM_PROMPT, RESULT_SCHEMA } from './prompt.js';
 import { callGemini, isGemini } from './gemini.js';
 
 export const MODELS = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 권장)', inPrice: 4, outPrice: 20, cacheRead: 0.2 },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 저렴)', inPrice: 2, outPrice: 10, cacheRead: 0.1 },
-  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 (가장 정확, 비쌈)', inPrice: 8, outPrice: 40, cacheRead: 0.2 },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · 권장', inPrice: 4, outPrice: 20, cacheRead: 0.2 },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 · 저렴', inPrice: 2, outPrice: 10, cacheRead: 0.1 },
+  { id: 'claude-fable-5-2', label: 'Claude Fable 5.2 · 가장 정확', inPrice: 8, outPrice: 40, cacheRead: 0.2 },
   // 구글 Gemini: 설정에서 Gemini 키를 따로 넣어야 씀 (lib/gemini.js)
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (구글, 더 저렴, 미리보기)', inPrice: 2, outPrice: 12, cacheRead: 0.2, provider: 'gemini' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro · 구글', inPrice: 2, outPrice: 12, cacheRead: 0.2, provider: 'gemini' },
 ];
 
 export class ClaudeError extends Error {

@@ -400,6 +400,7 @@ function layout() {
     p.view.setBounds(on ? sb : { x: 0, y: top, width: 0, height: 0 });
   }
   siteView.setVisible(!shown);
+  if (updateShown) { const [cw, chh] = win.getContentSize(); updateView.setBounds({ x: 0, y: 0, width: cw, height: chh }); }
   sendBar();
 }
 function sendBar() {
@@ -455,6 +456,8 @@ ipcMain.on('bar:cmd', (_e, cmd, arg) => {
   if (cmd === 'showPopup') showPopup(arg);
   if (cmd === 'closePopup') closePopup(arg);
   if (cmd === 'installUpdate') installUpdate();
+  if (cmd === 'updateNow') { hideUpdatePrompt(); installUpdate(); }
+  if (cmd === 'updateLater') hideUpdatePrompt(); // 위쪽 막대의 버튼은 그대로 남음
   if (cmd === 'diagnostics') { clipboard.writeText(diagnostics()); barView.webContents.send('bar:toast', '연결 정보를 복사했어요. 채팅에 붙여 넣어 주세요.'); }
 });
 ipcMain.on('divider:drag', (_e, phase, x) => {
@@ -469,6 +472,7 @@ ipcMain.on('layout:mode', (e, mode) => {
   authOpen = !!mode.auth;
   splashOpen = !!mode.splash;
   layout();
+  maybePromptUpdate();
 });
 
 // 연결 오류를 진단 정보에 남긴다 (광고·통계처럼 막혀도 되는 요청은 빼고)
@@ -540,6 +544,38 @@ function checkUpdatedNotice() {
   if (usedBefore && last !== v) updatedToast = `새 버전 ${v}로 업데이트했어요.`;
   if (last !== v) { prefs.data.lastVersion = v; prefs.save(); }
 }
+// 새 버전을 다 받으면: 앱 전체를 흐리게 덮고 가운데에 "확인 / 다음에 하기" (켠 동안 한 번만)
+// 화면들이 따로 그려지는 창(WebContentsView)이라 CSS로 뒤를 흐릴 수 없어서, 띄우기 직전에 각 화면을 찍어 흐리게 깔아 둔다.
+let updateView = null;
+let updatePrompted = false;
+let updateShown = false;
+async function maybePromptUpdate() {
+  if (updatePrompted || !win || !updateView || updater?.state?.status !== 'ready') return;
+  if (booting || authOpen || splashOpen || correcting()) return; // 로그인·시작 모션·교정이 끝난 뒤에 (30초마다 다시 봄)
+  updatePrompted = true;
+  const shown = popups.find((p) => p.wc.id === shownPopup);
+  const views = [barView, shown ? shown.view : siteView, panelView];
+  const shots = [];
+  for (const v of views) {
+    const b = v.getBounds();
+    if (!b.width || !b.height || v.webContents.isDestroyed()) continue;
+    try {
+      const img = (await v.webContents.capturePage()).resize({ width: Math.max(1, Math.round(b.width / 4)) }); // 흐리게 할 거라 작게
+      shots.push({ ...b, url: 'data:image/jpeg;base64,' + img.toJPEG(70).toString('base64') });
+    } catch {}
+  }
+  updateShown = true;
+  win.contentView.addChildView(updateView); // 맨 위로
+  layout();
+  updateView.webContents.send('update:prompt', { version: updater.state.version, from: app.getVersion(), shots });
+  updateView.webContents.focus();
+}
+function hideUpdatePrompt() {
+  if (!updateShown) return;
+  updateShown = false;
+  win.contentView.removeChildView(updateView);
+  panelView.webContents.focus();
+}
 function installUpdate() {
   if (!updater) return;
   const r = updater.install();
@@ -566,6 +602,7 @@ app.whenReady().then(() => {
       shown: () => shownPopup,
       windows: () => BrowserWindow.getAllWindows().length,
       update: () => updater?.state || null,
+      updatePrompt: () => updateShown,
     };
   }
 
@@ -614,7 +651,11 @@ app.whenReady().then(() => {
   // 자동 업데이트: 윈도 설치판에서만 (개발 중·맥·zip판에서는 끔). 테스트는 가짜 업데이터
   const fakeUpdater = process.env.SILO_FAKE_UPDATE ? require(path.resolve(process.env.SILO_FAKE_UPDATE)) : null;
   if (fakeUpdater || (app.isPackaged && process.platform === 'win32' && isInstalled())) {
-    updater = setupUpdater({ isBusy: correcting, onState: sendBar, log: logNet, updater: fakeUpdater, firstCheckMs: fakeUpdater ? 500 : undefined });
+    updateView = new WebContentsView({ webPreferences: uiPrefs });
+    updateView.setBackgroundColor('#00000000');
+    updateView.webContents.loadURL('silo://app/update.html');
+    updater = setupUpdater({ isBusy: correcting, onState: () => { sendBar(); maybePromptUpdate(); }, log: logNet, updater: fakeUpdater, firstCheckMs: fakeUpdater ? 500 : undefined });
+    setInterval(maybePromptUpdate, 30000).unref?.(); // 교정이 끝나기를 기다리는 동안
   }
 
   // 패널 화면이 다 읽히면(시작 모션은 화면이 보이기를 기다리는 중) 화면을 보여 준다. 늦어도 4초 뒤에는 보여 줌

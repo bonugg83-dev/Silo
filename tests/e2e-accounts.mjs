@@ -154,7 +154,6 @@ await panel.waitForFunction(() => [...document.querySelectorAll('#costMonth')].s
 
 // 계정 지우기: 온라인 계정도 지움
 await panel.click('#btnOpenSettings');
-await panel.click('#btnAdvanced');
 await panel.waitForTimeout(700);
 await panel.click('#btnDeleteProfile');
 // 브라우저 confirm 대신 앱 안 확인 창: 취소가 먼저 포커스, 빨간 지우기

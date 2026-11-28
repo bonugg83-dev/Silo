@@ -249,6 +249,19 @@ body.review-open { overflow: hidden; }
 .key-row .del { color: var(--muted); width: var(--h-sm); height: var(--h-sm); border-radius: var(--r-m); display: grid; place-items: center; font-size: 16px; line-height: 1; transition: color var(--fast); }
 .key-row .del:hover { color: var(--fg); }
 #model { width: 100%; }
+/* 설정 섹션: 교정 · 작업 · 비용 · 계정 (선으로 나누고 제목을 크게) */
+.sec-h { margin: 10px 0 -4px; padding-top: 16px; border-top: 1px solid var(--line); font-size: var(--fs-lg); font-weight: 700; color: var(--fg); }
+.hd + .sec-h { margin-top: 0; padding-top: 4px; border-top: none; }
+.fld-t { color: var(--sub); font-size: var(--fs-sm); margin-bottom: -8px; }
+.key-name { flex: none; min-width: 52px; color: var(--sub); font-size: var(--fs-sm); font-weight: 600; }
+/* 다른 옵션을 켜야 의미가 있는 옵션: 들여 쓰고, 꺼져 있으면 흐리게 */
+.opt.dep { padding-left: 16px; border-left: 2px solid var(--line); margin-left: 4px; }
+.opt:has(input:disabled) { opacity: .45; cursor: default; }
+.opt.static { cursor: default; }
+.danger-zone { display: flex; justify-content: space-between; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+/* 설정 안내: 스크롤 위치와 상관없이 화면 아래에 잠깐 */
+.set-msg { position: sticky; bottom: 12px; margin-top: auto; padding: 10px 14px; border-radius: var(--r-m); background: #f1f1f1; color: #0b0b0b; font-size: var(--fs-sm); font-weight: 500; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.set-msg:empty { display: none; }
 .tri { color: var(--sub); min-height: var(--h-sm); padding: 0 8px 0 12px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-m); font-size: var(--fs-sm); }
 .tri svg { width: 12px; height: 12px; fill: currentColor; transition: transform var(--fast); }
 .tri[aria-expanded="true"] svg { transform: rotate(180deg); }

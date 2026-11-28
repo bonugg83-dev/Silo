@@ -45,11 +45,27 @@ await panel.fill('#newCode', 'TESTCODE');
 await panel.click('#btnSignup');
 await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
 
-// 새 버전을 받으면 버튼이 뜸
+// 새 버전을 받으면 앱 전체를 흐리게 덮고 가운데에 안내 → 다음에 하기
+const prompt = () => app.evaluate(() => globalThis.__silo.updatePrompt());
+const upd = await find(/update\.html/);
+for (let t = 0; t < 10000 && !(await prompt()); t += 100) await sleep(100);
+assert.ok(await prompt(), '가운데 안내가 뜸');
+await upd.waitForFunction(() => document.body.classList.contains('on') && document.querySelectorAll('#shots img').length >= 2);
+assert.equal(await upd.textContent('#to'), '9.9.9');
+assert.equal(await upd.textContent('#now'), '확인');
+assert.equal(await upd.textContent('#later'), '다음에 하기');
+if (process.env.SHOTS) await sleep(500), await upd.screenshot({ path: path.join(process.env.SHOTS, 'update-prompt.png') });
+await upd.click('#later');
+await sleep(300);
+assert.equal(await prompt(), false, '다음에 하기를 누르면 닫힘');
+assert.equal((await fake()).installs.length, 0, '다음에 하기는 설치하지 않음');
+console.log('✓ 새 버전을 받으면 가운데 안내, 다음에 하기로 닫힘');
+
+// 닫아도 위쪽 막대에 다시 시작 버튼은 남음
 await bar.waitForSelector('#update:not([hidden])', { timeout: 10000 });
 assert.match(await bar.textContent('#update'), /9\.9\.9/);
 assert.ok((await fake()).checks >= 1);
-console.log('✓ 새 버전을 받으면 위쪽 막대에 다시 시작 버튼');
+console.log('✓ 위쪽 막대에 다시 시작 버튼이 남음');
 
 // 교정 중이면 다시 시작하지 않음
 await panel.evaluate(() => siloPlatform.storage.session.set({ 'runlock:test': { owner: 'x', at: Date.now() } }));
@@ -87,5 +103,13 @@ await bar.waitForSelector('#toast:not([hidden])', { timeout: 10000 });
 assert.equal(await bar.textContent('#toast'), `새 버전 ${ver}로 업데이트했어요.`);
 assert.equal(JSON.parse(fs.readFileSync(prefsFile, 'utf8')).lastVersion, ver);
 console.log('✓ 업데이트 뒤 처음 켜면 한 번 알려 줌');
+
+// 가운데 안내에서 확인을 누르면 바로 설치하고 다시 켬
+const upd2 = await find(/update\.html/);
+await upd2.waitForFunction(() => document.body.classList.contains('on'), null, { timeout: 10000 });
+await upd2.click('#now');
+await sleep(300);
+assert.deepEqual((await fake()).installs, [{ silent: true, runAfter: true }]);
+console.log('✓ 확인을 누르면 설치하고 다시 켬');
 await app.close();
 console.log('모두 통과');

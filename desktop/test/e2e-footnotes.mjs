@@ -41,7 +41,6 @@ await panel.waitForFunction(() => !document.body.classList.contains('auth-open')
 
 // 쪽 넘김 간격 짧게
 await panel.click('#btnOpenSettings');
-await panel.click('#btnAdvanced');
 await panel.fill('#paceMinSec', '1');
 await panel.fill('#paceMaxSec', '2');
 await panel.press('#paceMaxSec', 'Tab');
