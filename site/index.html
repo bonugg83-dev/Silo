@@ -2,135 +2,419 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Silo 설치하기</title>
-<meta name="description" content="마이픽 전자도서 교정 도우미 Silo를 윈도 컴퓨터와 갤럭시 탭에 설치합니다.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Silo · 마이픽 전자도서 교정 도우미</title>
+<meta name="description" content="책 사진을 직접 보고, OCR 글을 「전자도서제작안내서」 규칙에 맞춰 다시 쓰는 마이픽 전자도서 교정 도우미. 윈도 앱과 갤럭시 탭 앱.">
+<meta name="theme-color" content="#0b0b0b">
+<meta property="og:title" content="Silo">
+<meta property="og:description" content="보이지 않는 독자에게 책을 보내는 가장 조용한 방법.">
+<meta property="og:image" content="https://bonugg83-dev.github.io/Silo/panel-done.webp">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css">
 <style>
-  :root {
-    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5a6470;
-    --line: #dde1e6; --accent: #1f5fd1; --accent-text: #ffffff; --soft: #e8f0fd;
-    --warn-bg: #fff6e0; --warn-line: #e9c46a;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14171b; --card: #1d2126; --text: #e9edf1; --muted: #a3adb8;
-      --line: #333a42; --accent: #6b9cff; --accent-text: #0b1220; --soft: #1e2a40;
-      --warn-bg: #2e2715; --warn-line: #7a6427;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 18px/1.65 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  }
-  main { max-width: 860px; margin: 0 auto; padding: 40px 16px 64px; }
-  h1 { font-size: 2rem; margin: 0 0 4px; }
-  .lead { color: var(--muted); margin: 0 0 8px; }
-  .version { color: var(--muted); font-size: .95rem; margin: 0 0 28px; }
-  .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-  .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px;
-  }
-  .card.mine { border: 2px solid var(--accent); }
-  .card h2 { margin: 0 0 4px; font-size: 1.35rem; }
-  .tag { display: inline-block; font-size: .8rem; background: var(--soft); color: var(--accent);
-         border-radius: 999px; padding: 2px 10px; margin-left: 6px; vertical-align: middle; }
-  .sub { color: var(--muted); margin: 0 0 16px; font-size: .95rem; }
-  .btn {
-    display: block; text-align: center; text-decoration: none; font-weight: 700; font-size: 1.1rem;
-    background: var(--accent); color: var(--accent-text); border-radius: 10px; padding: 14px 16px;
-  }
-  .btn:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
-  .size { display: block; text-align: center; color: var(--muted); font-size: .85rem; margin-top: 6px; }
-  ol { padding-left: 1.3em; margin: 18px 0 0; }
-  li { margin-bottom: 8px; }
-  .note {
-    background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 10px;
-    padding: 12px 14px; margin-top: 14px; font-size: .95rem;
-  }
-  section.more { margin-top: 36px; }
-  section.more h2 { font-size: 1.2rem; }
-  a { color: var(--accent); }
-  footer { margin-top: 40px; color: var(--muted); font-size: .9rem; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+</style>
+<style>
+/* 레이아웃: 층마다 모양을 다르게. 실제 앱 화면을 주인공으로, 스크롤로 움직이는 장면은 하나만 */
+:root {
+  color-scheme: dark;
+  --brand-ink: #f4f4f2; --accent: #4f9dff;
+  --bg: #0b0b0b; --panel: #121212; --card-low: #161616; --box: #1c1c1c;
+  --btn: #272727; --line: #2c2c2c; --border: #6b6b6b;
+  --fg: #f1f1f1; --sub: #cfcfcf; --muted: #9a9a9a; --hint: #8a8a8a;
+  --danger: #ff8a8a; --mark-red: #5a1e1e; --warn: #f5c451; --warn-bg: #3a2e12; --ins: #8be28b;
+  --r-m: 10px; --r-l: 16px; --h-sm: 32px; --h: 36px;
+  --fast: .15s; --slow: .35s; --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --font-ui: "Pretendard Variable", "Pretendard", system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --top: 56px;
+}
+@keyframes rise { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+* { box-sizing: border-box; }
+html { background: var(--panel); }
+body { background: var(--panel); color: var(--fg); font: 17px/1.65 var(--font-ui); word-break: keep-all; }
+::selection { background: rgba(79,157,255,.35); }
+a { color: var(--accent); }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 700; }
+p { margin: 0; }
+img { display: block; }
+.wrap { max-width: 1200px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { width: 2.005em; height: 1.23em; display: block; }
+:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+.pill { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--h); padding: 0 16px; border-radius: 999px;
+  background: var(--btn); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border); text-decoration: none; font: 600 15px/1 var(--font-ui);
+  border: 0; cursor: pointer; transition: transform var(--fast), background var(--fast); white-space: nowrap; }
+.pill:hover { background: #303030; }
+.pill:active { transform: scale(.97); }
+.pill.white { background: #fff; color: #000; box-shadow: none; }
+.pill.white:hover { background: #e8e8e8; }
+.pill.lg { min-height: 52px; padding: 0 28px; font-size: 17px; }
+.chip { min-height: var(--h-sm); padding: 0 14px; border-radius: var(--r-m); background: var(--btn); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border);
+  border: 0; font: 600 13px/1 var(--font-ui); cursor: pointer; transition: background var(--fast); }
+.chip[aria-pressed="true"] { background: #fff; color: #000; box-shadow: none; }
+@media (pointer: coarse) { :root { --h-sm: 44px; --h: 44px; } }
+
+/* 문장: 핵심만 밝게, 나머지는 회색 */
+.say { color: var(--muted); }
+.say b { color: var(--fg); font-weight: inherit; }
+
+/* 위쪽 막대 */
+.topbar { position: fixed; inset: 0 0 auto; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top, 0px); }
+.topbar .wrap { height: var(--top); display: flex; align-items: center; gap: 12px; }
+.topbar .brand { font-size: 23px; }
+.tag { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.topbar .pill { margin-left: auto; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity var(--slow) var(--ease-out), transform var(--slow) var(--ease-out); }
+.topbar .pill.show { opacity: 1; pointer-events: auto; transform: none; }
+
+/* 첫 화면: 왼쪽 글, 오른쪽 실제 화면 겹치기 */
+.hero { padding-block: calc(var(--top) + 72px) 112px; }
+.hero .wrap { display: grid; grid-template-columns: 6fr 6fr; gap: 48px; align-items: center; }
+.hero .wrap > * { min-width: 0; }
+.hero h1 { font-size: clamp(40px, 4.4vw, 58px); line-height: 1.22; letter-spacing: -.02em; }
+.hero .lead { color: var(--sub); font-size: 18px; margin-top: 22px; max-width: 26em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+.files { margin-top: 14px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.shot { position: relative; aspect-ratio: 1 / .94; }
+.shot img { height: auto; }
+.shot .book { position: absolute; left: 0; top: 6%; width: 52%; border-radius: 4px; transform: rotate(-2.5deg); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+.shot .app { position: absolute; right: 0; top: 0; width: 46%; border-radius: var(--r-l); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+
+/* 대표 장면: 원본을 보고 다시 쓰기 (스크롤로 움직이는 건 여기 하나) */
+#what { height: 300vh; border-top: 1px solid var(--line); }
+.stage { position: sticky; top: 0; height: 100vh; height: 100svh; padding-top: calc(var(--top) + env(safe-area-inset-top, 0px)); overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+.stage > .wrap { width: 100%; }
+.stage h2 { font-size: clamp(28px, 2.8vw, 36px); line-height: 1.3; margin-bottom: 36px; }
+.duo { display: grid; grid-template-columns: 4fr 5fr; gap: 40px; align-items: start; }
+.duo > div { min-width: 0; will-change: transform; }
+.label { font-size: 13px; color: var(--muted); margin-bottom: 10px; display: flex; justify-content: space-between; gap: 8px; }
+.label b { color: var(--sub); font-weight: 600; font-variant-numeric: tabular-nums; }
+.scanwrap { position: relative; border-radius: 4px; overflow: hidden; max-height: 62vh; }
+.scanwrap img { width: 100%; height: auto; }
+.scan { position: absolute; left: 0; right: 0; height: 2px; top: 0; background: var(--accent); box-shadow: 0 0 14px 3px rgba(79,157,255,.6); opacity: 0; }
+.res { background: var(--box); border-radius: var(--r-l); padding: 24px 26px; font-size: 17px; line-height: 1.8; }
+.res p + p { margin-top: .4em; }
+.fx .new { display: none; }
+.fx .old { color: var(--danger); text-decoration: line-through; }
+.fx.done .old { display: none; }
+.fx.done .new { display: inline; color: var(--ins); animation: rise var(--fast) ease-out; }
+.slot2 { width: 38%; height: 0; margin: .2em 0 .4em; }
+.flyer { position: absolute; z-index: 5; pointer-events: none; opacity: 0; border-radius: 4px; box-shadow: 0 12px 32px rgba(0,0,0,.6); }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92em; color: var(--sub); }
+
+/* 영상 */
+.video { padding-block: 120px 96px; }
+.video h2, .anno h2 { font-size: clamp(28px, 2.8vw, 36px); line-height: 1.3; }
+.poster { position: relative; display: block; margin-top: 32px; aspect-ratio: 16 / 9; border-radius: var(--r-l); overflow: hidden; background: var(--bg); border: 1px solid var(--line); text-decoration: none; color: var(--fg); }
+.poster img { position: absolute; top: 8%; height: 84%; width: auto; border-radius: 6px; opacity: .55; transition: opacity var(--slow) var(--ease-out); }
+.poster .p1 { left: 14%; transform: rotate(-2deg); }
+.poster .p2 { right: 16%; border: 1px solid var(--line); }
+.poster:hover img { opacity: .7; }
+.poster iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.play { position: absolute; left: 50%; top: 50%; width: 88px; height: 88px; margin: -44px 0 0 -44px; border-radius: 50%; background: #fff; display: grid; place-items: center; transition: transform var(--fast); }
+.poster:active .play { transform: scale(.97); }
+.play::after { content: ""; margin-left: 6px; border-style: solid; border-width: 16px 0 16px 26px; border-color: transparent transparent transparent #000; }
+.poster .cap { position: absolute; left: 24px; bottom: 20px; font-size: 15px; color: var(--sub); background: rgba(11,11,11,.8); padding: 6px 12px; border-radius: var(--r-m); }
+
+/* 실제 화면에 번호 붙이기 */
+.anno { padding-block: 96px 120px; }
+.anno .wrap { display: grid; grid-template-columns: 5fr 6fr; gap: 72px; align-items: center; }
+.anno .wrap > * { min-width: 0; }
+.pinned { position: relative; max-width: 440px; margin-left: 20px; }
+.pinned img { width: 100%; height: auto; border-radius: var(--r-l); border: 1px solid var(--line); }
+.pin { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; background: #fff; color: #000; font: 700 14px/28px var(--font-ui); text-align: center; box-shadow: 0 0 0 4px rgba(18,18,18,.9); font-variant-numeric: tabular-nums; }
+.shotnote { margin-top: 12px; font-size: 13px; color: var(--hint); }
+.points { list-style: none; margin: 32px 0 0; padding: 0; display: flex; flex-direction: column; gap: 28px; }
+.points li { display: grid; grid-template-columns: 28px 1fr; gap: 16px; font-size: 19px; line-height: 1.6; font-weight: 600; }
+.points li span { width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #000; font: 700 14px/28px var(--font-ui); text-align: center; margin-top: 1px; }
+.points li em { font-style: normal; color: var(--danger); }
+.points li i { font-style: normal; color: var(--warn); }
+
+/* 숫자 */
+.nums { padding-block: 112px; border-top: 1px solid var(--line); }
+.nums .wrap { display: grid; grid-template-columns: 7fr 5fr; gap: 48px; align-items: end; }
+.nums .wrap > div { min-width: 0; }
+.num { font-size: clamp(72px, 9vw, 132px); font-weight: 700; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.num small { font-size: .32em; font-weight: 600; letter-spacing: 0; margin-left: .15em; }
+.nums p { margin-top: 18px; color: var(--sub); font-size: 18px; max-width: 26em; }
+.nums .second .num { font-size: clamp(56px, 6vw, 96px); }
+
+/* 약속 한 줄 */
+.promise { background: var(--bg); padding-block: 128px; }
+.promise p { font-size: clamp(30px, 3.6vw, 48px); font-weight: 700; line-height: 1.35; letter-spacing: -.02em; max-width: 18em; }
+
+/* 설치 */
+.install { padding-block: 112px; }
+.install h2 { font-size: clamp(28px, 2.8vw, 36px); }
+.install .sub { color: var(--sub); margin-top: 10px; }
+.install-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 56px; margin-top: 40px; align-items: start; }
+.install-grid > * { min-width: 0; }
+.chips { display: flex; gap: 8px; }
+.after { color: var(--sub); display: flex; flex-direction: column; gap: 16px; }
+.after b { color: var(--fg); font-weight: 600; }
+.ipanel { background: var(--box); border-radius: var(--r-l); padding: 28px; }
+.ipanel h3 { font-size: 22px; }
+.ipanel .spec { color: var(--muted); font-size: 15px; margin-top: 4px; }
+.ipanel .pill { margin-top: 20px; }
+.ipanel .file { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ipanel ol { margin: 24px 0 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; color: var(--sub); }
+.ipanel ol b { color: var(--fg); font-weight: 600; }
+.warnbar { margin-top: 18px; background: var(--warn-bg); color: var(--warn); border-radius: var(--r-m); padding: 10px 14px; font-size: 15px; }
+footer { background: var(--bg); border-top: 1px solid var(--line); padding-block: 40px 56px; color: var(--muted); font-size: 15px; }
+footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+footer .brand { font-size: 20px; }
+footer a { color: var(--muted); }
+footer .copy { margin-left: auto; font-size: 11px; color: var(--hint); }
+
+@media (max-width: 860px) {
+  .tag { display: none; }
+  .hero .wrap, .duo, .anno .wrap, .nums .wrap, .install-grid { grid-template-columns: 1fr; gap: 28px; }
+  .hero { padding-block: calc(var(--top) + 40px) 64px; }
+  .shot { width: 100%; }
+  .stage h2 { margin-bottom: 16px; }
+  .scanwrap { max-height: 30svh; }
+  .res { padding: 16px; font-size: 14px; }
+  .video, .anno, .nums, .promise, .install { padding-block: 64px; }
+  .poster .p1 { left: 4%; } .poster .p2 { right: 4%; }
+  .play { width: 64px; height: 64px; margin: -32px 0 0 -32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+  #what { height: auto; }
+  .stage { position: relative; height: auto; padding-block: 96px; }
+}
 </style>
 </head>
 <body>
-<main>
-  <h1>Silo 설치하기</h1>
-  <p class="lead">마이픽 전자도서 교정 도우미입니다. 쓰는 기기에 맞는 버튼을 눌러 한 번만 설치하면, 그다음부터는 앱이 스스로 업데이트합니다.</p>
-  <p class="version" id="version" aria-live="polite">최신 버전을 확인하는 중…</p>
-
-  <div class="cards">
-    <article class="card" id="win">
-      <h2>윈도 컴퓨터</h2>
-      <p class="sub">Windows 10 · 11</p>
-      <a class="btn" id="win-btn" href="https://github.com/bonugg83-dev/Silo/releases/latest">윈도용 받기 (.exe)</a>
-      <span class="size" id="win-size"></span>
-      <ol>
-        <li>받은 <b>Silo-Setup</b> 파일을 엽니다.</li>
-        <li>파란 “Windows의 PC 보호” 창이 뜨면 <b>추가 정보</b> → <b>실행</b>을 누릅니다.</li>
-        <li>설치가 끝나면 Silo가 열립니다. 로그인하면 끝!</li>
-      </ol>
-      <div class="note">“PC 보호” 경고는 코드 서명을 하지 않은 앱이라 뜨는 것이고, 처음 설치할 때만 나옵니다.</div>
-    </article>
-
-    <article class="card" id="android">
-      <h2>갤럭시 탭</h2>
-      <p class="sub">안드로이드 태블릿 · 가로 화면</p>
-      <a class="btn" id="apk-btn" href="https://github.com/bonugg83-dev/Silo/releases/latest">태블릿용 받기 (.apk)</a>
-      <span class="size" id="apk-size"></span>
-      <ol>
-        <li>태블릿에서 이 페이지를 열고 버튼을 누릅니다.</li>
-        <li>다운로드가 끝나면 알림(또는 <b>내 파일 → 다운로드</b>)에서 파일을 누릅니다.</li>
-        <li>“출처를 알 수 없는 앱” 창이 뜨면 <b>설정</b> → <b>이 출처 허용</b>을 켜고 뒤로 가서 <b>설치</b>를 누릅니다.</li>
-      </ol>
-      <div class="note">“유해한 파일일 수 있습니다” 경고가 뜨면 <b>무시하고 다운로드</b>를 누르세요. 허용은 처음 한 번만 하면 됩니다.</div>
-    </article>
+<header class="topbar">
+  <div class="wrap">
+    <svg class="brand" id="brandTop" xmlns="http://www.w3.org/2000/svg" viewBox="0 -970 2005 1230" role="img" aria-label="Silo"><path class="ink" fill="#f4f4f2" d="M502 -718 526 -771H559L569 -550H525Q475 -721 332 -721Q280 -721 251 -695.5Q222 -670 222 -626Q222 -596 241 -572.5Q260 -549 288.5 -532Q317 -515 367 -490Q439 -454 484.5 -423.5Q530 -393 563 -342.5Q596 -292 596 -218Q596 -154 560 -102.5Q524 -51 462 -21Q400 9 324 9Q277 9 233 -3Q189 -15 139 -41L104 0H73L53 -256L95 -263Q127 -150 180.5 -99.5Q234 -49 322 -49Q386 -49 423.5 -79.5Q461 -110 461 -163Q461 -193 441.5 -216Q422 -239 392 -256Q362 -273 309 -299Q234 -334 186 -365Q138 -396 104 -446.5Q70 -497 70 -569Q70 -629 103.5 -677Q137 -725 195.5 -752.5Q254 -780 326 -780Q428 -780 502 -718ZM991 0H671V-35L756 -55V-441L671 -468V-492L890 -540H911V-55L991 -35ZM1344 0H1024V-35L1109 -55V-731L1024 -758V-782L1243 -830H1264V-55L1344 -35ZM1969 -265Q1969 -188 1935.5 -125.5Q1902 -63 1837.5 -26.5Q1773 10 1684 10Q1595 10 1530.5 -26.5Q1466 -63 1432.5 -125.5Q1399 -188 1399 -265Q1399 -342 1432.5 -404.5Q1466 -467 1530.5 -503.5Q1595 -540 1684 -540Q1773 -540 1837.5 -503.5Q1902 -467 1935.5 -404.5Q1969 -342 1969 -265ZM1684 -41Q1749 -41 1775 -108Q1801 -175 1801 -265Q1801 -355 1775.5 -421.5Q1750 -488 1684 -488Q1618 -488 1592.5 -421.5Q1567 -355 1567 -265Q1567 -174 1592.5 -107.5Q1618 -41 1684 -41Z"/><path class="dot" fill="#4f9dff" d="M832 -780Q872 -780 896.5 -755.5Q921 -731 921 -697Q921 -664 897.5 -639.5Q874 -615 832 -615Q792 -615 769 -639.5Q746 -664 746 -697Q746 -731 769.5 -755.5Q793 -780 832 -780Z"/></svg>
+    <a class="pill white" id="topDl" href="#install">다운로드</a>
   </div>
+</header>
 
-  <section class="more">
-    <h2>설치한 다음</h2>
-    <p>로그인하려면 관리자에게 받은 <b>가입 코드</b>와 본인 <b>API 키</b>가 필요합니다. 새 버전이 나오면 앱이 알아서 받아 둡니다(태블릿은 위쪽 줄의 <b>설치</b> 버튼을 한 번 누르면 됩니다).</p>
-    <p>버튼이 동작하지 않으면 <a href="https://github.com/bonugg83-dev/Silo/releases/latest">릴리스 페이지</a>에서 직접 받을 수 있습니다.</p>
-  </section>
+<main>
+<section class="hero" id="hero">
+  <div class="wrap">
+    <div>
+      <h1 class="say"><b>Silo.</b> 보이지 않는 독자에게 책을 보내는 가장 조용한 방법.</h1>
+      <p class="lead">책 사진을 직접 보고, OCR 글을 「전자도서제작안내서」 규칙에 맞춰 처음부터 다시 쓰는 마이픽 전자도서 교정 도우미.</p>
+      <div class="cta">
+        <a class="pill lg white" data-os="win" data-dl="exe" href="https://github.com/bonugg83-dev/Silo/releases/latest">윈도용 다운로드</a>
+        <a class="pill lg" data-os="android" data-dl="apk" href="https://github.com/bonugg83-dev/Silo/releases/latest">태블릿용 받기</a>
+      </div>
+      <p class="files">윈도 10·11용 <span data-size="exe">78MB</span>. 갤럭시 탭용 <span data-size="apk">4MB</span>.</p>
+    </div>
+    <div class="shot">
+      <img class="book" src="book-page.webp" width="900" height="1340" alt="예시 책 쪽 사진. 엘 그레코의 그림 〈눈먼 사람을 고치심〉과 실로암을 설명하는 글이 있는 쪽.">
+      <img class="app" src="panel-done.webp" width="920" height="1820" alt="같은 쪽을 교정한 Silo 화면. 그림이 @@i 자리에 들어가 있고, 확인할 곳이 빨강과 노랑으로 칠해져 있다.">
+    </div>
+  </div>
+</section>
 
-  <footer>Silo · <a href="https://github.com/bonugg83-dev/Silo">GitHub</a></footer>
+<section id="what">
+  <div class="stage"><div class="wrap">
+    <h2 class="say"><b>원본이 기준.</b> OCR이 잘못 읽은 글자 하나까지, 책 사진을 보며 다시 쓰는 교정.</h2>
+    <div class="duo">
+      <div id="whatL"><div class="label">원본 이미지</div>
+        <div class="scanwrap"><img src="book-page.webp" width="900" height="1340" alt="예시 책 쪽 사진"><div class="scan" id="scan"></div></div>
+      </div>
+      <div id="whatR"><div class="label">Silo가 다시 쓴 글 <b id="fixCount">고친 곳 0</b></div>
+        <div class="res" id="whatRes">
+          <p class="mono">[그림] <span class="fx" data-at=".2"><span class="old">&lt;눈먼 사람을 고치심 Christ Healing the Blind&gt;</span><span class="new">〈눈먼 사람을 고치심(Christ Healing the Blind)〉</span></span></p>
+          <div class="slot2" id="slot2"></div>
+          <p>요한복음 9장의 이야기를 그린 그림으로, … 이 남자는 곧 <span class="fx" data-at=".46"><span class="old">실로앙</span><span class="new">실로암</span></span> 못으로 가서 씻고 앞을 보게 된다. … 엘 그레코(<span class="fx" data-at=".5"><span class="old">EI</span><span class="new">El</span></span> Greco)의 1570년 무렵 작품.</p>
+          <p class="mono">[그림 끝]</p>
+          <p><span class="mono">@@(</span>실로암, 보냄을 받은 물</p>
+          <p>실로암은 예루살렘 성 남쪽에 있던 못이다. <span class="fx" data-at=".56"><span class="old">기흔</span><span class="new">기혼</span></span> 샘의 물은 바위를 뚫어 만든 굴 <span class="fx" data-at=".62"><span class="old">--</span><span class="new">―</span></span> 길이가 500m를 넘는다 <span class="fx" data-at=".64"><span class="old">--</span><span class="new">―</span></span> 을 따라 이 못까지 흘러왔다. 요한복음은 이 이름을 <span class="fx" data-at=".7"><span class="old">'보냄을 받았다'</span><span class="new">‘보냄을 받았다’</span></span>는 뜻이라고 풀이한다.</p>
+          <p>태어날 때부터 앞을 보지 못하던 사람은 … <span class="fx" data-at=".78"><span class="old">실로앙</span><span class="new">실로암</span></span> 못으로 가서 씻었고, 돌아올 때는 앞을 보았다.</p>
+        </div>
+      </div>
+    </div>
+  </div><img class="flyer" id="flyer" src="greco.webp" alt=""></div>
+</section>
+
+<section class="video">
+  <div class="wrap">
+    <h2 class="say"><b>직접 보면 더 분명하게.</b> 마이픽 편집 화면에서 Silo가 한 쪽을 교정하는 실제 모습.</h2>
+    <a class="poster" id="poster" href="https://youtu.be/izA-Fg9b78M" target="_blank" rel="noopener" aria-label="Silo 구동 영상 재생">
+      <img class="p1" src="book-page.webp" alt="">
+      <img class="p2" src="panel-working.webp" alt="">
+      <span class="play" aria-hidden="true"></span>
+      <span class="cap">영상 재생</span>
+    </a>
+  </div>
+</section>
+
+<section class="anno">
+  <div class="wrap">
+    <div>
+      <div class="pinned">
+        <img src="panel-done.webp" width="920" height="1820" alt="교정을 마친 Silo 화면">
+        <span class="pin" style="left:-4%;top:46%">1</span>
+        <span class="pin" style="left:-4%;top:23.5%">2</span>
+        <span class="pin" style="left:-4%;top:51.5%">3</span>
+      </div>
+      <p class="shotnote">실제 Silo 화면. 예시 그림은 엘 그레코, 〈눈먼 사람을 고치심〉, 1570년 무렵, 메트로폴리탄 미술관.</p>
+    </div>
+    <div>
+      <h2 class="say"><b>한 쪽이 끝나면.</b> 사람이 손대야 할 곳만 또렷하게 남겨 둔 결과.</h2>
+      <ol class="points">
+        <li><span>1</span><p class="say"><b>제목은 목차대로.</b> 교정을 시작하기 전에 책 목차부터 읽고, 대제목·중제목·소제목 단계를 그대로 맞추는 것.</p></li>
+        <li><span>2</span><p class="say"><b>그림은 제자리에.</b> 원본에서 사진과 그림을 잘라 내 @@i 자리에 넣는 일까지 한 번에.</p></li>
+        <li><span>3</span><p class="say"><b>볼 곳만 색으로.</b> 꼭 확인할 곳은 <em>빨강</em>, 참고할 곳은 <i>노랑</i>. 나머지는 믿고 넘어가도 되게.</p></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="nums">
+  <div class="wrap">
+    <div><div class="num">800<small>원</small></div><p class="say"><b>봉사 1시간 분량</b>을 교정하는 데 드는 비용, 약 800원.</p></div>
+    <div class="second"><div class="num">5<small>분</small></div><p class="say">쪽 넘김 간격을 가장 짧게 두었을 때, <b>봉사 1시간 분량</b>을 끝내는 데 걸리는 시간.</p></div>
+  </div>
+</section>
+
+<section class="promise">
+  <div class="wrap">
+    <p class="say">자동모드로 마지막 쪽까지 막힘없이.<br><b>제출하기만큼은 언제나 사람의 손으로.</b></p>
+  </div>
+</section>
+
+<section class="install" id="install">
+  <div class="wrap">
+    <h2 class="say"><b>설치는 한 번.</b> 업데이트는 그다음부터 알아서.</h2>
+    <div class="install-grid">
+      <div class="after">
+        <div class="chips" role="group" aria-label="기기 고르기">
+          <button type="button" class="chip" id="chipWin" aria-pressed="true">윈도</button>
+          <button type="button" class="chip" id="chipTab" aria-pressed="false">갤럭시 탭</button>
+        </div>
+        <p>로그인에 필요한 것은 관리자에게 받은 <b>가입 코드</b>와 내 <b>API 키</b>, 이 두 가지.</p>
+        <p>버튼이 동작하지 않을 땐 <a href="https://github.com/bonugg83-dev/Silo/releases/latest">릴리스 페이지</a>에서 바로.</p>
+      </div>
+      <div class="ipanel" id="ipWin">
+        <h3>윈도 앱</h3><p class="spec">Windows 10 · 11</p>
+        <a class="pill lg white" data-dl="exe" href="https://github.com/bonugg83-dev/Silo/releases/latest">윈도용 다운로드</a>
+        <span class="file" data-file="exe">Silo-Setup-0.4.7.exe · 78MB</span>
+        <ol>
+          <li>받은 Silo-Setup 파일 열기.</li>
+          <li>파란 “Windows의 PC 보호” 창이 뜨면 <b>추가 정보</b>, 그다음 <b>실행</b>.</li>
+          <li>Silo가 열리면 로그인으로 마무리.</li>
+        </ol>
+        <p class="warnbar">서명하지 않은 앱이라 뜨는 경고. 처음 설치할 때 한 번뿐.</p>
+      </div>
+      <div class="ipanel" id="ipTab" hidden>
+        <h3>태블릿 앱</h3><p class="spec">갤럭시 탭 · 가로 화면</p>
+        <a class="pill lg white" data-dl="apk" href="https://github.com/bonugg83-dev/Silo/releases/latest">태블릿용 다운로드</a>
+        <span class="file" data-file="apk">Silo-0.4.7.apk · 4MB</span>
+        <ol>
+          <li>탭에서 이 페이지를 열고 다운로드 버튼 누르기.</li>
+          <li>다운로드가 끝나면 알림에서 파일 열기.</li>
+          <li><b>이 출처 허용</b>을 켠 뒤 <b>설치</b>.</li>
+        </ol>
+        <p class="warnbar">“유해한 파일일 수 있음” 경고에는 <b>무시하고 다운로드</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <svg class="brand" data-logo viewBox="0 -970 2005 1230" role="img" aria-label="Silo"></svg>
+    <a href="https://github.com/bonugg83-dev/Silo">GitHub</a>
+    <small class="copy">© 2026 877기 구본욱</small>
+  </div>
+</footer>
 
 <script>
 (function () {
-  var REPO = 'bonugg83-dev/Silo';
-  var ua = navigator.userAgent || '';
-  var mine = /Android/i.test(ua) ? 'android' : (/Windows/i.test(ua) ? 'win' : null);
-  if (mine) {
-    var card = document.getElementById(mine);
-    card.classList.add('mine');
-    card.querySelector('h2').insertAdjacentHTML('beforeend', '<span class="tag">지금 이 기기</span>');
-    if (mine === 'android') card.parentNode.insertBefore(card, card.parentNode.firstChild);
+  var $ = function (id) { return document.getElementById(id); };
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var clamp = function (v) { return Math.min(1, Math.max(0, v)); };
+  var seg = function (p, a, b) { return clamp((p - a) / (b - a)); };
+  var ease = function (t) { return 1 - Math.pow(1 - t, 3); };
+  document.querySelectorAll('svg[data-logo]').forEach(function (el) { el.innerHTML = $('brandTop').innerHTML; });
+
+  var isTab = /Android/i.test(navigator.userAgent || '');
+  if (isTab) document.querySelectorAll('.cta .pill').forEach(function (a) { a.classList.toggle('white', a.dataset.os === 'android'); });
+  function pick(tab) {
+    $('chipWin').setAttribute('aria-pressed', String(!tab));
+    $('chipTab').setAttribute('aria-pressed', String(tab));
+    $('ipWin').hidden = tab; $('ipTab').hidden = !tab;
   }
+  $('chipWin').onclick = function () { pick(false); };
+  $('chipTab').onclick = function () { pick(true); };
+  pick(isTab);
 
-  function mb(n) { return (n / 1048576).toFixed(0) + 'MB'; }
-
-  fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
+  // 최신 릴리스의 설치 파일로 바로 연결 (실패하면 릴리스 페이지로 감)
+  fetch('https://api.github.com/repos/bonugg83-dev/Silo/releases/latest')
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (rel) {
-      var v = (rel.tag_name || '').replace(/^v/, '');
-      var date = rel.published_at ? new Date(rel.published_at).toLocaleDateString('ko-KR') : '';
-      document.getElementById('version').textContent = '최신 버전 ' + v + (date ? ' · ' + date : '');
       (rel.assets || []).forEach(function (a) {
-        if (/\.exe$/i.test(a.name)) {
-          document.getElementById('win-btn').href = a.browser_download_url;
-          document.getElementById('win-size').textContent = a.name + ' · ' + mb(a.size);
-        } else if (/\.apk$/i.test(a.name)) {
-          document.getElementById('apk-btn').href = a.browser_download_url;
-          document.getElementById('apk-size').textContent = a.name + ' · ' + mb(a.size);
-        }
+        var kind = /\.exe$/i.test(a.name) ? 'exe' : /\.apk$/i.test(a.name) ? 'apk' : null;
+        if (!kind) return;
+        var mb = Math.round(a.size / 1048576) + 'MB';
+        document.querySelectorAll('[data-dl="' + kind + '"]').forEach(function (el) { el.href = a.browser_download_url; });
+        document.querySelectorAll('[data-size="' + kind + '"]').forEach(function (el) { el.textContent = mb; });
+        document.querySelectorAll('[data-file="' + kind + '"]').forEach(function (el) { el.textContent = a.name + ' · ' + mb; });
       });
     })
-    .catch(function () {
-      document.getElementById('version').textContent = '최신 버전 정보를 못 불러왔어요. 버튼을 누르면 릴리스 페이지로 갑니다.';
-    });
+    .catch(function () {});
+
+  $('poster').addEventListener('click', function (e) {
+    e.preventDefault();
+    var f = document.createElement('iframe');
+    f.src = 'https://www.youtube-nocookie.com/embed/izA-Fg9b78M?autoplay=1&rel=0';
+    f.title = 'Silo 구동 영상';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen = true;
+    this.replaceWith(Object.assign(document.createElement('div'), { className: 'poster' })); 
+    document.querySelector('.video .poster').appendChild(f);
+  });
+
+  function prog(el) {
+    if (reduce) return 1;
+    var r = el.getBoundingClientRect(), span = r.height - innerHeight;
+    return span <= 0 ? 1 : clamp(-r.top / span);
+  }
+  function frame() {
+    var inst = $('install').getBoundingClientRect();
+    $('topDl').classList.toggle('show', $('hero').getBoundingClientRect().bottom < 80 && !(inst.top < innerHeight && inst.bottom > 0));
+    var p = prog($('what')), e = ease(seg(p, 0, .22));
+    $('whatL').style.transform = 'translateX(' + (-(1 - e) * 36) + 'vw)';
+    $('whatR').style.transform = 'translateX(' + ((1 - e) * 36) + 'vw)';
+    var k = ease(seg(p, .24, .4)), slot = $('slot2'), fly = $('flyer');
+    var tw = slot.getBoundingClientRect().width, th = tw * 667 / 816;
+    slot.style.height = (k * th) + 'px';
+    if (p < .22) fly.style.opacity = 0;
+    else {
+      var im = document.querySelector('#whatL img').getBoundingClientRect(), t = slot.getBoundingClientRect(), sr = fly.parentNode.getBoundingClientRect();
+      var sw = im.width * 708 / 900, sh = sw * 667 / 816, sx = im.left + im.width * 96 / 900, sy = im.top + im.height * 80 / 1340;
+      var L = function (a, b) { return a + (b - a) * k; };
+      fly.style.opacity = 1;
+      fly.style.left = (L(sx, t.left) - sr.left) + 'px';
+      fly.style.top = (L(sy, t.top) - sr.top - Math.sin(Math.PI * k) * 80) + 'px';
+      fly.style.width = L(sw, tw) + 'px';
+      fly.style.height = L(sh, th) + 'px';
+    }
+    var sc = seg(p, .22, .88);
+    $('scan').style.top = (sc * 100) + '%';
+    $('scan').style.opacity = sc > 0 && sc < 1 ? 1 : 0;
+    $('whatRes').querySelectorAll('.fx').forEach(function (el) { el.classList.toggle('done', p >= parseFloat(el.dataset.at)); });
+    $('fixCount').textContent = '고친 곳 ' + $('whatRes').querySelectorAll('.fx.done').length;
+  }
+  var ticking = false;
+  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(function () { ticking = false; frame(); }); } }
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  frame();
 })();
 </script>
+
 </body>
 </html>
