@@ -138,6 +138,8 @@ async function setLockState(on) {
 }
 async function openProfile(p, apiKey, ses = null, gkey = '') {
   unlocked = { pid: p.id, key: apiKey, gkey, lastUsed: Date.now() };
+  // Gemini 키만 있는 계정인데 Claude 모델이 골라져 있으면 Gemini로
+  if (!apiKey && gkey && !isGemini(settings.model) && GEMINI_MODEL) { settings.model = GEMINI_MODEL; await persist(); }
   cloudSes = ses ? { ...ses, pid: p.id } : null;
   await platform.storage.session.set({ unlock: unlocked, cloud: cloudSes });
   await setLockState(true);
@@ -211,6 +213,17 @@ function prepSignup() {
   $('newKeyFld').classList.toggle('hidden', !!settings.keys.length && !!sel.value);
 }
 const NEED_NET = '인터넷 연결이 필요해요. 연결한 뒤 다시 해 주세요.';
+const GEMINI_MODEL = MODELS.find((m) => isGemini(m.id))?.id;
+/**
+ * 비밀번호로 계정의 키를 풂. Claude 키(enc)와 Gemini 키(genc) 중 하나만 있는 계정도 있음.
+ * 비밀번호가 틀리면 null, 맞으면 {key, gkey} (없는 쪽은 '')
+ */
+async function unlockKeys(p, pw) {
+  const key = p.enc ? await decryptKey(p.enc, pw) : '';
+  const gkey = p.genc ? await decryptKey(p.genc, pw) : '';
+  if (p.enc ? !key : !gkey) return null;
+  return { key: key || '', gkey: gkey || '' };
+}
 /** 처음 계정일 때: 계정이 없던 때의 책·비용 기록을 이 계정 것으로 */
 async function adoptLegacy(p) {
   const plan = legacyMigration(await platform.storage.local.get(null), p.id);
@@ -222,18 +235,28 @@ async function signup() {
   const name = $('newName').value.trim();
   const code = $('newCode').value.trim();
   const legacy = settings.keys.find((k) => k.id === $('legacyKey').value);
-  const apiKey = legacy ? legacy.key : $('newKey').value.trim();
+  const typed = legacy ? legacy.key : $('newKey').value.trim();
+  // 키 모양으로 Claude(sk-ant-)인지 Gemini인지 가림: 둘 중 하나만 있으면 가입할 수 있음
+  const apiKey = isApiKey(typed) ? typed : '';
+  const geminiKey = !apiKey && isGeminiKey(typed) ? typed : '';
   const pw = $('newPw1').value;
   const bad = !displayName ? '이름을 넣어 주세요.'
     : !/^[A-Za-z0-9가-힣_.-]{2,20}$/.test(name) ? '아이디는 영문, 숫자, 한글로 2~20자예요.'
     : findAccount(name) ? '이 컴퓨터에 이미 있는 아이디예요. 로그인해 주세요.'
       : checkPassword(pw, $('newPw1b').value)
         || (!code ? '가입 코드를 넣어 주세요.' : '')
-        || (!isApiKey(apiKey) ? 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.' : '');
+        || (!apiKey && !geminiKey ? 'API 키 형식이 아니에요. Claude 키(sk-ant-…)나 Gemini 키를 띄어쓰기 없이 붙여 넣어 주세요.' : '');
   if (bad) { $('gateMsg').textContent = bad; return; }
+  if (geminiKey) {
+    // Gemini 키는 진짜 되는지 구글에 물어봄 (비용 없음)
+    $('gateMsg').textContent = 'Gemini 키를 확인하는 중…';
+    const v = await verifyGeminiKey(geminiKey);
+    if (!v.ok) { $('gateMsg').textContent = v.offline ? NEED_NET : `구글이 이 키를 받지 않아요: ${v.reason}`; return; }
+    if (GEMINI_MODEL) settings.model = GEMINI_MODEL; // Claude 키가 없으니 처음부터 Gemini 모델로
+  }
   $('gateMsg').textContent = '계정을 만드는 중…';
   const first = !profiles.length;
-  const p = await makeProfile({ name, apiKey, password: pw, index: profiles.length });
+  const p = await makeProfile({ name, apiKey, geminiKey, password: pw, index: profiles.length });
   p.displayName = displayName;
   let ses;
   try {
@@ -251,7 +274,8 @@ async function signup() {
     await platform.storage.local.set({ settings });
   }
   for (const id of ['newDisplayName', 'newName', 'newPw1', 'newPw1b', 'newKey', 'newCode']) $(id).value = '';
-  await openProfile(p, apiKey, ses);
+  if (geminiKey) await platform.storage.local.set({ settings });
+  await openProfile(p, apiKey, ses, geminiKey);
 }
 /** 서버의 계정 기록을 이 컴퓨터에 반영 (없으면 새로 둠) */
 function mergeCloudProfile(local, remote, uid) {
@@ -273,9 +297,9 @@ async function login() {
     if (e instanceof OfflineError) {
       // 인터넷이 안 되면 이 컴퓨터에 남은 계정으로
       if (!local) { $('gateMsg').textContent = `${NEED_NET} (이 컴퓨터에서 처음 로그인하는 아이디예요)`; return; }
-      const k = await decryptKey(local.enc, pw);
+      const k = await unlockKeys(local, pw);
       if (!k) { $('gateMsg').textContent = '비밀번호가 맞지 않아요.'; $('loginPw').select(); return; }
-      await openProfile(local, k, null, local.genc ? (await decryptKey(local.genc, pw)) || '' : '');
+      await openProfile(local, k.key, null, k.gkey);
       msg('settingsMsg', '인터넷이 안 돼서 이 컴퓨터에 남은 기록으로 들어왔어요.');
       return;
     }
@@ -284,7 +308,7 @@ async function login() {
     return;
   }
   if (!r.profile) { $('gateMsg').textContent = '계정 기록이 없어요. 관리자에게 계정 삭제를 부탁한 뒤 다시 가입해 주세요.'; return; }
-  const k = await decryptKey(r.profile.enc, pw);
+  const k = await unlockKeys(r.profile, pw);
   if (!k) { $('gateMsg').textContent = 'API 키를 풀지 못했어요. 다시 가입해 주세요.'; return; }
   const first = !profiles.length;
   const p = mergeCloudProfile(local, r.profile, r.session.uid);
@@ -294,9 +318,7 @@ async function login() {
     settings = { ...settings, ...r.settings, keys: settings.keys };
     await platform.storage.local.set({ settings });
   }
-  // Gemini 키도 같은 비밀번호로 잠가 두었으면 같이 풂 (없으면 Claude 모델만)
-  const gk = p.genc ? (await decryptKey(p.genc, pw)) || '' : '';
-  await openProfile(p, k, r.session, gk);
+  await openProfile(p, k.key, r.session, k.gkey);
 }
 /** 예전에 이 컴퓨터에만 만든 계정: 비밀번호가 맞으면 가입 코드를 받아 온라인으로 옮김 */
 async function moveOnline(p, pw) {
@@ -468,7 +490,9 @@ async function persist() {
   await platform.storage.local.set({ settings });
   if (me()?.uid) quietly((s) => cloud.saveSettings(s, settings));
 }
-const needKeyMsg = () => (unlocked && isGemini(settings.model) ? '설정 → 내 계정에서 Gemini 키를 넣어 주세요. (또는 AI 모델을 Claude로)' : '로그인해 주세요.');
+const needKeyMsg = () => (!unlocked ? '로그인해 주세요.'
+  : isGemini(settings.model) ? '설정 → 내 계정에서 Gemini 키를 넣어 주세요. (또는 AI 모델을 Claude로)'
+    : '설정에서 Claude 키를 넣어 주세요. (또는 AI 모델을 Gemini로)');
 /** 지금 고른 모델에 맞는 키 (Gemini 모델이면 Gemini 키) */
 function activeKey() {
   if (isGemini(settings.model)) return runGKey || unlocked?.gkey || '';
@@ -482,7 +506,8 @@ function renderMe() {
   $('meName').textContent = p.displayName || p.name;
   $('meSub').textContent = p.displayName ? `아이디 ${p.name} · 로그인 중` : '로그인 중';
   $('meDisplayName').textContent = p.displayName || '아직 안 넣었어요';
-  $('meKey').textContent = p.mask;
+  $('meKey').textContent = p.mask || '없음';
+  $('btnChangeKey').textContent = p.mask ? '키 바꾸기' : '키 넣기';
   $('meGKey').textContent = p.gmask || '없음';
   $('btnSetGKey').textContent = p.gmask ? '키 바꾸기' : '키 넣기';
   $('btnDelGKey').classList.toggle('hidden', !p.gmask);
@@ -534,7 +559,8 @@ async function changeKey() {
   const apiKey = $('newKeyValue').value.trim();
   if (!isApiKey(apiKey)) { msg('settingsMsg', 'API 키 형식이 아니에요. sk-ant- 로 시작하는 키를 붙여 넣어 주세요.'); return; }
   const pw = $('changeKeyPw').value;
-  if (!(await decryptKey(p.enc, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  if (!(await unlockKeys(p, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  const had = !!p.mask;
   p.enc = await encryptKey(apiKey, pw);
   p.mask = maskKey(apiKey);
   await saveProfiles();
@@ -544,7 +570,7 @@ async function changeKey() {
   $('changeKeyPw').value = '';
   toggleBox('changeKeyBox', 'btnChangeKey', false);
   renderMe();
-  msg('settingsMsg', '키를 바꿨어요.');
+  msg('settingsMsg', had ? '키를 바꿨어요.' : 'Claude 키를 넣었어요. AI 모델에서 Claude를 고르면 써요.');
 }
 /** Gemini 키 넣기·바꾸기: Claude 키처럼 로그인 비밀번호로 잠가 저장 (온라인 계정에도) */
 async function setGeminiKey() {
@@ -555,7 +581,7 @@ async function setGeminiKey() {
     return;
   }
   const pw = $('gKeyPw').value;
-  if (!(await decryptKey(p.enc, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
+  if (!(await unlockKeys(p, pw))) { msg('settingsMsg', '비밀번호가 맞지 않아요.'); return; }
   // 키가 진짜 되는지 구글에 물어봄 (비용 없음). 인터넷이 안 되면 일단 저장
   msg('settingsMsg', 'Gemini 키를 확인하는 중…');
   const v = await verifyGeminiKey(gk);
@@ -573,6 +599,7 @@ async function setGeminiKey() {
 }
 async function deleteGeminiKey() {
   const p = me();
+  if (!p.enc) { msg('settingsMsg', '키가 하나는 있어야 해요. Claude 키를 먼저 넣은 뒤 지워 주세요.'); return; }
   if (!(await ask({ title: 'Gemini 키를 지울까요?', body: '지우면 Gemini 모델로 교정할 수 없어요.', ok: '지우기', danger: true }))) return;
   p.genc = '';
   p.gmask = '';
@@ -584,14 +611,13 @@ async function deleteGeminiKey() {
 }
 async function changePassword() {
   const p = me();
-  const k = await decryptKey(p.enc, $('oldPw').value);
-  if (!k) { msg('settingsMsg', '지금 비밀번호가 맞지 않아요.'); return; }
+  const ks = await unlockKeys(p, $('oldPw').value);
+  if (!ks) { msg('settingsMsg', '지금 비밀번호가 맞지 않아요.'); return; }
   const bad = checkPassword($('newPw').value, $('newPw2').value);
   if (bad) { msg('settingsMsg', bad); return; }
-  const encNew = await encryptKey(k, $('newPw').value);
+  const encNew = ks.key ? await encryptKey(ks.key, $('newPw').value) : undefined;
   // Gemini 키도 새 비밀번호로 다시 잠금
-  const gk = p.genc ? await decryptKey(p.genc, $('oldPw').value) : '';
-  const gencNew = gk ? await encryptKey(gk, $('newPw').value) : '';
+  const gencNew = ks.gkey ? await encryptKey(ks.gkey, $('newPw').value) : '';
   if (p.uid) {
     // 온라인 계정은 서버 비밀번호도 같이 바꿔야 함 (인터넷 필요)
     if (!online()) { msg('settingsMsg', '비밀번호를 바꾸려면 인터넷이 될 때 다시 로그인해 주세요.'); return; }
@@ -603,7 +629,7 @@ async function changePassword() {
       return;
     }
   }
-  p.enc = encNew;
+  if (encNew) p.enc = encNew;
   if (gencNew) p.genc = gencNew;
   await saveProfiles();
   for (const id of ['oldPw', 'newPw', 'newPw2']) $(id).value = '';
@@ -1983,7 +2009,8 @@ $('model').addEventListener('change', async () => {
   settings.model = $('model').value;
   await persist();
   showOptionCosts();
-  msg('settingsMsg', isGemini(settings.model) && !unlocked?.gkey ? '모델을 바꿨어요. 이 모델은 Gemini 키가 있어야 해요. 바로 아래 Gemini 칸에서 넣어 주세요.' : '모델을 바꿨어요.');
+  msg('settingsMsg', isGemini(settings.model) && !unlocked?.gkey ? '모델을 바꿨어요. 이 모델은 Gemini 키가 있어야 해요. 바로 아래 Gemini 칸에서 넣어 주세요.'
+    : !isGemini(settings.model) && !unlocked?.key ? '모델을 바꿨어요. 이 모델은 Claude 키가 있어야 해요. 바로 아래 Claude 칸에서 넣어 주세요.' : '모델을 바꿨어요.');
 });
 
 async function editorBook() {

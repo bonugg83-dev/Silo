@@ -188,14 +188,14 @@
       </form>
 
       <form id="gateSignup" class="stack hidden" autocomplete="off">
-        <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">어느 컴퓨터에서나 같은 아이디로 로그인할 수 있어요. API 키는 비밀번호로 잠가 저장해요.</p></div>
+        <div class="gate-title"><h1>계정 만들기</h1><p id="signupSub" class="note">어느 컴퓨터에서나 같은 아이디로 로그인할 수 있어요. API 키는 Claude나 Gemini 중 하나만 있어도 되고, 비밀번호로 잠가 저장해요. 다른 키는 나중에 설정에서 넣을 수 있어요.</p></div>
         <label class="fld">이름<input type="text" id="newDisplayName" maxlength="20" autocomplete="name" spellcheck="false" placeholder="실제 이름 (관리자가 누구 계정인지 알아보게)"></label>
         <label class="fld">아이디<input type="text" id="newName" maxlength="20" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="영문, 숫자, 한글 2~20자"></label>
         <label class="fld">비밀번호<input type="password" id="newPw1" autocomplete="new-password" placeholder="4자 이상"></label>
         <label class="fld">비밀번호 확인<input type="password" id="newPw1b" autocomplete="new-password"></label>
         <label class="fld hidden" id="legacyFld">API 키<select id="legacyKey"></select></label>
         <label class="fld">가입 코드<input type="text" id="newCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="받은 가입 코드"></label>
-        <label class="fld" id="newKeyFld">Claude API 키<input type="password" id="newKey" placeholder="sk-ant-..." autocomplete="off"></label>
+        <label class="fld" id="newKeyFld">API 키 (Claude 또는 Gemini)<input type="password" id="newKey" placeholder="sk-ant-... 또는 Gemini 키" autocomplete="off"></label>
         <button type="submit" id="btnSignup" class="pill white block">가입하고 시작하기</button>
         <p class="note swap">이미 계정이 있나요? <button type="button" id="toLogin" class="link">로그인</button></p>
       </form>

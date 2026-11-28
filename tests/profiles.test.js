@@ -63,3 +63,10 @@ test('자동 로그아웃, 월 한도, 다른 창 실행', () => {
   assert.ok(!runLockedByOther({ owner: 'me', at: now }, 'me', now));
   assert.ok(!runLockedByOther({ owner: 'x', at: now - 61000 }, 'me', now));
 });
+
+test('Gemini 키만으로 프로필 만들기 (Claude 키 칸 없음)', async () => {
+  const p = await makeProfile({ name: 'gem', geminiKey: 'AIzaSyTESTGEMINIKEY_abcdefghijklmnop', password: 'abcd', iter: 1000 });
+  assert.ok(!('enc' in p) && !('mask' in p));
+  assert.equal(await decryptKey(p.genc, 'abcd'), 'AIzaSyTESTGEMINIKEY_abcdefghijklmnop');
+  assert.equal(await decryptKey(p.enc, 'abcd'), null, '없는 키는 null');
+});

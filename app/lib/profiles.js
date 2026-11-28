@@ -40,6 +40,7 @@ export async function encryptKey(apiKey, password, iter = PBKDF2_ITER) {
 
 /** 비밀번호가 틀리면 null. */
 export async function decryptKey(rec, password) {
+  if (!rec?.data) return null;
   try {
     const k = await deriveKey(password, unb64(rec.salt), rec.iter || PBKDF2_ITER);
     const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(rec.iv) }, k, unb64(rec.data));
@@ -58,14 +59,14 @@ export function checkPassword(pw, pw2) {
   return '';
 }
 
-/** 새 프로필 기록 (키는 암호화해서) */
-export async function makeProfile({ name, apiKey, password, index = 0, iter }) {
+/** 새 프로필 기록 (키는 암호화해서). Claude 키(apiKey)와 Gemini 키(geminiKey) 중 하나만 있어도 됨 */
+export async function makeProfile({ name, apiKey = '', geminiKey = '', password, index = 0, iter }) {
   return {
     id: crypto.randomUUID(),
     name: name.trim(),
     color: index % AVATAR_COLORS.length,
-    enc: await encryptKey(apiKey, password, iter),
-    mask: maskKey(apiKey),
+    ...(apiKey ? { enc: await encryptKey(apiKey, password, iter), mask: maskKey(apiKey) } : {}),
+    ...(geminiKey ? { genc: await encryptKey(geminiKey, password, iter), gmask: maskKey(geminiKey) } : {}),
     lockAfterMin: 30,
     monthlyLimit: 0,
     createdAt: Date.now(),

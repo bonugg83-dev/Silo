@@ -182,6 +182,52 @@ await panel.waitForFunction(() => document.body.classList.contains('auth-open'),
 });
 assert.equal(fb.users.size, 1, '지운 계정은 서버에서도 사라짐');
 
+// Claude 키 없이 Gemini 키만으로 가입 → Gemini 모델로 시작, 다시 로그인해도 됨
+const GKEY = 'AIzaSyTESTGEMINIKEY_abcdefghijklmnop123';
+let geminiChecks = 0;
+await context.route(/generativelanguage\.googleapis\.com/, (route) => {
+  geminiChecks++;
+  const ok = route.request().headers()['x-goog-api-key'] === GKEY;
+  return route.fulfill({ status: ok ? 200 : 400, contentType: 'application/json', body: JSON.stringify(ok ? { models: [] } : { error: { message: 'API key not valid' } }) });
+});
+await panel.click('#toSignup');
+await panel.waitForFunction(() => document.activeElement?.id === 'newDisplayName', null, { timeout: 3000 }).catch(() => {});
+await panel.fill('#newDisplayName', '박제미'); await panel.fill('#newName', 'gem'); await panel.fill('#newPw1', 'gggg'); await panel.fill('#newPw1b', 'gggg');
+await panel.fill('#newCode', 'TESTCODE');
+if (await panel.isVisible('#legacyKey')) await panel.selectOption('#legacyKey', '');
+await panel.fill('#newKey', 'AIzaSyWRONGWRONGWRONGWRONGWRONG');
+await panel.click('#btnSignup');
+await panel.waitForFunction(() => /받지 않아요/.test(document.querySelector('#gateMsg').textContent));
+await panel.fill('#newKey', GKEY);
+await panel.click('#btnSignup');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+assert.ok(geminiChecks >= 2, 'Gemini 키는 구글에 확인');
+let gst = await panel.evaluate(() => chrome.storage.local.get(null));
+let gp = gst.profiles.find((p) => p.name === 'gem');
+assert.ok(!gp.enc && gp.genc && gp.gmask, 'Claude 키 없이 Gemini 키만 잠가 저장');
+assert.match(gst.settings.model, /^gemini-/, 'Gemini 모델로 시작');
+assert.ok(!JSON.stringify([...fb.docs.values()]).includes(GKEY), '서버에도 잠긴 키만');
+await panel.click('#btnOpenSettings');
+await panel.waitForTimeout(500);
+assert.equal(await panel.textContent('#meKey'), '없음');
+assert.equal(await panel.textContent('#btnChangeKey'), '키 넣기');
+await panel.click('#btnDelGKey');
+await panel.waitForFunction(() => /하나는 있어야/.test(document.querySelector('#settingsMsg').textContent));
+await panel.click('#btnLogout');
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.evaluate(() => chrome.storage.local.clear()); // 다른 컴퓨터에서 로그인
+await panel.reload();
+await panel.waitForFunction(() => document.body.classList.contains('auth-open'));
+await panel.fill('#loginId', 'gem'); await panel.fill('#loginPw', 'xxxx');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => /맞지 않아요|풀지 못했/.test(document.querySelector('#gateMsg').textContent));
+await panel.fill('#loginPw', 'gggg');
+await panel.click('#btnLogin');
+await panel.waitForFunction(() => !document.body.classList.contains('auth-open'));
+gst = await panel.evaluate(() => chrome.storage.local.get(null));
+assert.match(gst.settings.model, /^gemini-/, '다른 컴퓨터에서도 Gemini 모델');
+assert.equal((await panel.evaluate(() => chrome.storage.session.get('unlock'))).unlock.gkey, GKEY, 'Gemini 키가 풀림');
+
 assert.deepEqual(errors, []);
-console.log('통과: 예전 키·기록 옮기기, 가입 코드, 월 한도, 로그아웃, 다른 컴퓨터 로그인, 오프라인 로그인, 예전 계정 옮기기, 계정 지우기');
+console.log('통과: 예전 키·기록 옮기기, 가입 코드, 월 한도, 로그아웃, 다른 컴퓨터 로그인, 오프라인 로그인, 예전 계정 옮기기, 계정 지우기, Gemini 키만으로 가입');
 await context.close();
